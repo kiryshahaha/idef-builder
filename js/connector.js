@@ -13,7 +13,8 @@ class ConnectorEngine {
     dataflow: '#1e293b',   // DFD Navy
     rel_ident: '#000000',  // IDEF1X Solid
     rel_non: '#000000',    // IDEF1X Dashed
-    precedence: '#374151'  // IDEF3 Slate
+    rel_opt: '#000000',    // IDEF1X Optional (Dashed with Diamond)
+    precedence: '#000000'  // IDEF3 Slate
   };
 
   /**
@@ -87,36 +88,80 @@ class ConnectorEngine {
     const h = block.height;
 
     return {
-      left:   { x: x,         y: y + h / 2, side: 'left',   type: 'input' },
-      top:    { x: x + w / 2, y: y,         side: 'top',    type: 'control' },
-      right:  { x: x + w,     y: y + h / 2, side: 'right',  type: 'output' },
-      bottom: { x: x + w / 2, y: y + h,     side: 'bottom', type: 'mechanism' }
+      left:   { x: x,         y: y + h / 2, side: 'left' },
+      top:    { x: x + w / 2, y: y,         side: 'top' },
+      right:  { x: x + w,     y: y + h / 2, side: 'right' },
+      bottom: { x: x + w / 2, y: y + h,     side: 'bottom' }
     };
   }
 
   /**
    * Render complete connection SVG element
    */
-  static renderConnection(conn, model) {
-    const color = ConnectorEngine.ICOM_COLORS[conn.icomType] || '#1e293b';
+  static getConnectionEndpoints(conn, model) {
     let p1, p2;
 
-    if (conn.sourceId && conn.targetId) {
+    if (conn.sourceId) {
       const src = model.getElementById(conn.sourceId);
-      const tgt = model.getElementById(conn.targetId);
-      if (!src || !tgt) return null;
-
-      const srcPorts = ConnectorEngine.getBlockPorts(src);
-      const tgtPorts = ConnectorEngine.getBlockPorts(tgt);
-
-      p1 = srcPorts[conn.sourcePort || 'right'];
-      p2 = tgtPorts[conn.targetPort || 'left'];
-    } else {
+      if (src) {
+        const srcPorts = ConnectorEngine.getBlockPorts(src);
+        p1 = srcPorts[conn.sourcePort || 'right'];
+      }
+    }
+    if (!p1) {
       p1 = conn.p1 || { x: 50, y: 150, side: 'left' };
+    }
+
+    if (conn.targetId) {
+      const tgt = model.getElementById(conn.targetId);
+      if (tgt) {
+        const tgtPorts = ConnectorEngine.getBlockPorts(tgt);
+        p2 = tgtPorts[conn.targetPort || 'left'];
+      }
+    }
+    if (!p2) {
       p2 = conn.p2 || { x: 250, y: 150, side: 'right' };
     }
 
-    const points = conn.points && conn.points.length > 1 ? conn.points : ConnectorEngine.routeOrthogonal(p1, p2);
+    return { p1, p2 };
+  }
+
+  static renderConnection(conn, model) {
+    const color = ConnectorEngine.ICOM_COLORS[conn.icomType] || '#1e293b';
+    const { p1, p2 } = ConnectorEngine.getConnectionEndpoints(conn, model);
+    if (!p1 || !p2) return null;
+
+    const isDirectStraight = Math.abs(p2.x - p1.x) < 2 || Math.abs(p2.y - p1.y) < 2;
+
+    if (!conn.points || conn.points.length < 2 || (conn.points.length === 2 && !isDirectStraight)) {
+      conn.points = ConnectorEngine.routeOrthogonal(p1, p2);
+    } else {
+      // Keep ends anchored strictly to endpoints
+      conn.points[0].x = p1.x;
+      conn.points[0].y = p1.y;
+      const last = conn.points.length - 1;
+      conn.points[last].x = p2.x;
+      conn.points[last].y = p2.y;
+
+      // Only adjust intermediate corners if we have at least 3 points (prevents crossing over endpoints on 2-point lines!)
+      if (conn.points.length >= 3) {
+        // Keep segment 0 orthogonal
+        if (Math.abs(conn.points[0].y - conn.points[1].y) <= Math.abs(conn.points[0].x - conn.points[1].x)) {
+          conn.points[1].y = p1.y;
+        } else {
+          conn.points[1].x = p1.x;
+        }
+
+        // Keep last segment orthogonal (last - 1 >= 1, so it never touches points[0])
+        if (Math.abs(conn.points[last].y - conn.points[last - 1].y) <= Math.abs(conn.points[last].x - conn.points[last - 1].x)) {
+          conn.points[last - 1].y = p2.y;
+        } else {
+          conn.points[last - 1].x = p2.x;
+        }
+      }
+    }
+
+    const points = conn.points;
     const d = ConnectorEngine.pointsToSvgPath(points);
 
     // Midpoint for label
@@ -126,12 +171,26 @@ class ConnectorEngine {
     const labelX = (midPt.x + prevPt.x) / 2 + (conn.labelOffsetX || 0);
     const labelY = (midPt.y + prevPt.y) / 2 - 8 + (conn.labelOffsetY || 0);
 
-    const isDashed = conn.icomType === 'rel_non';
+    const isDashed = conn.icomType === 'rel_non' || conn.icomType === 'rel_opt';
     const isTunnel = conn.isTunnel || false;
 
     let markerEnd = `arr_${conn.icomType || 'input'}`;
-    if (conn.icomType === 'rel_ident' || conn.icomType === 'rel_non') {
-      markerEnd = 'arr_crowfoot';
+    let markerStart = null;
+
+    if (conn.icomType === 'rel_ident' || conn.icomType === 'rel_non' || conn.icomType === 'rel_opt') {
+      if (conn.cardinality === 'Z') {
+        markerEnd = 'arr_idef1x_z';
+      } else if (conn.cardinality === 'P') {
+        markerEnd = 'arr_idef1x_p';
+      } else if (conn.cardinality === 'none') {
+        markerEnd = '';
+      } else {
+        markerEnd = 'arr_idef1x_dot';
+      }
+
+      if (conn.icomType === 'rel_opt' || conn.hasDiamond) {
+        markerStart = 'arr_idef1x_diamond';
+      }
     }
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -188,7 +247,8 @@ class ConnectorEngine {
       <!-- Visible line -->
       <path d="${d}" fill="none" stroke="${color}" stroke-width="${conn.selected ? 2.5 : 1.5}" 
             ${isDashed ? 'stroke-dasharray="6,4"' : ''} 
-            marker-end="url(#${markerEnd})" class="conn-line"/>
+            ${markerStart ? `marker-start="url(#${markerStart})"` : ''}
+            ${markerEnd ? `marker-end="url(#${markerEnd})"` : ''} class="conn-line"/>
       
       ${tunnelSvg}
 

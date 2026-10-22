@@ -14,7 +14,12 @@ class CanvasController {
     this.panX = 40;
     this.panY = 30;
     this.isPanning = false;
+    this.isPanModeActive = false;
+    this.isSpacePressed = false;
     this.panStart = { x: 0, y: 0 };
+    this.isResizingCanvas = false;
+    this.canvasResizeStartPt = null;
+    this.canvasResizeStartDim = null;
 
     // Interaction state
     this.dragTarget = null;
@@ -23,6 +28,7 @@ class CanvasController {
     this.dragLabelStartPt = { x: 0, y: 0 };
     this.dragLabelInitOffset = { x: 0, y: 0 };
     this.dragHandleTarget = null;
+    this.resizeTarget = null;
     this.activePort = null;
     this.tempConnection = null;
 
@@ -69,10 +75,25 @@ class CanvasController {
         <polygon points="0 0, 8 3, 0 6" fill="#1e293b"/>
       </marker>
       <marker id="arr_precedence" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-        <polygon points="0 0, 8 3, 0 6" fill="#374151"/>
+        <polygon points="0 0, 8 3, 0 6" fill="#000000"/>
       </marker>
       <marker id="arr_crowfoot" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
         <path d="M 0 0 L 10 5 L 0 10 M 0 5 L 10 5" fill="none" stroke="#000000" stroke-width="1.3"/>
+      </marker>
+      <!-- IDEF1X Standard Relationship Markers per NIST FIPS PUB 184 -->
+      <marker id="arr_idef1x_dot" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+        <circle cx="5" cy="5" r="3.5" fill="#000000"/>
+      </marker>
+      <marker id="arr_idef1x_diamond" markerWidth="14" markerHeight="10" refX="7" refY="5" orient="auto">
+        <polygon points="1 5, 7 1.5, 13 5, 7 8.5" fill="#ffffff" stroke="#000000" stroke-width="1.3"/>
+      </marker>
+      <marker id="arr_idef1x_z" markerWidth="14" markerHeight="14" refX="7" refY="7" orient="auto">
+        <rect x="0" y="0" width="14" height="14" fill="#ffffff" fill-opacity="0.9"/>
+        <text x="7" y="11" font-family="'Times New Roman', serif" font-size="12" font-weight="bold" fill="#000000" text-anchor="middle">Z</text>
+      </marker>
+      <marker id="arr_idef1x_p" markerWidth="14" markerHeight="14" refX="7" refY="7" orient="auto">
+        <rect x="0" y="0" width="14" height="14" fill="#ffffff" fill-opacity="0.9"/>
+        <text x="7" y="11" font-family="'Times New Roman', serif" font-size="12" font-weight="bold" fill="#000000" text-anchor="middle">P</text>
       </marker>
     `;
     this.svgEl.appendChild(this.defsEl);
@@ -104,7 +125,14 @@ class CanvasController {
   }
 
   render() {
-    // 1. Render GOST Master Frame
+    // 0. Update SVG dimensions if changed
+    if (this.svgEl) {
+      this.svgEl.setAttribute('width', this.model.width);
+      this.svgEl.setAttribute('height', this.model.height);
+      this.svgEl.setAttribute('viewBox', `0 0 ${this.model.width} ${this.model.height}`);
+    }
+
+    // 1. Render Master Frame
     this.frameLayer.innerHTML = '';
     const frame = new GostFrame(this.model);
     this.frameLayer.appendChild(frame.render(this.svgEl));
@@ -129,9 +157,100 @@ class CanvasController {
       }
     });
 
-    // 4. Render Geometry Handles for selected connections
+    // 4. Render Geometry Handles for selected connections and elements
     this.overlayLayer.innerHTML = '';
     this.renderConnectionHandles();
+    this.renderElementResizeHandles();
+    this.renderCanvasCornerResizeHandle();
+  }
+
+  
+  renderCanvasCornerResizeHandle() {
+    const W = this.model.width || 1200;
+    const H = this.model.height || 820;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'canvas-corner-resize-handle');
+    g.setAttribute('style', 'cursor: nwse-resize;');
+    g.setAttribute('title', `Рабочее пространство: ${W} × ${H} px (Потяните для изменения размера)`);
+    g.innerHTML = `
+      <rect x="${W - 22}" y="${H - 22}" width="22" height="22" fill="#2563eb" rx="4" opacity="0.85"/>
+      <path d="M ${W - 16} ${H - 6} L ${W - 6} ${H - 16} M ${W - 11} ${H - 6} L ${W - 6} ${H - 11}" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round"/>
+    `;
+    this.overlayLayer.appendChild(g);
+  }
+
+  renderElementResizeHandles() {
+    if (this.model.selectedIds.length !== 1) return;
+    const id = this.model.selectedIds[0];
+    const el = this.model.getElementById(id);
+    if (!el) return;
+
+    const x = el.x;
+    const y = el.y;
+    const w = el.width;
+    const h = el.height;
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'element-resize-overlay');
+
+    // Bounding box dashed border
+    const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    box.setAttribute('x', x - 2);
+    box.setAttribute('y', y - 2);
+    box.setAttribute('width', w + 4);
+    box.setAttribute('height', h + 4);
+    box.setAttribute('fill', 'none');
+    box.setAttribute('stroke', '#2563eb');
+    box.setAttribute('stroke-width', '1.2');
+    box.setAttribute('stroke-dasharray', '3,3');
+    box.setAttribute('pointer-events', 'none');
+    g.appendChild(box);
+
+    const handles = [
+      { name: 'nw', x: x,         y: y,         cursor: 'nwse-resize' },
+      { name: 'n',  x: x + w / 2, y: y,         cursor: 'ns-resize' },
+      { name: 'ne', x: x + w,     y: y,         cursor: 'nesw-resize' },
+      { name: 'e',  x: x + w,     y: y + h / 2, cursor: 'ew-resize' },
+      { name: 'se', x: x + w,     y: y + h,     cursor: 'nwse-resize' },
+      { name: 's',  x: x + w / 2, y: y + h,     cursor: 'ns-resize' },
+      { name: 'sw', x: x,         y: y + h,     cursor: 'nesw-resize' },
+      { name: 'w',  x: x,         y: y + h / 2, cursor: 'ew-resize' }
+    ];
+
+    const hs = 8; // handle size
+    handles.forEach(hnd => {
+      const hg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      hg.setAttribute('class', 'element-resize-handle');
+      hg.setAttribute('data-element-id', el.id);
+      hg.setAttribute('data-handle', hnd.name);
+      hg.setAttribute('style', `cursor: ${hnd.cursor};`);
+
+      // Transparent larger hit area for easy grabbing
+      const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      hit.setAttribute('x', hnd.x - 7);
+      hit.setAttribute('y', hnd.y - 7);
+      hit.setAttribute('width', 14);
+      hit.setAttribute('height', 14);
+      hit.setAttribute('fill', 'transparent');
+      hg.appendChild(hit);
+
+      // Visible handle square
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', hnd.x - hs / 2);
+      rect.setAttribute('y', hnd.y - hs / 2);
+      rect.setAttribute('width', hs);
+      rect.setAttribute('height', hs);
+      rect.setAttribute('fill', '#ffffff');
+      rect.setAttribute('stroke', '#2563eb');
+      rect.setAttribute('stroke-width', '1.5');
+      rect.setAttribute('rx', '1');
+      rect.setAttribute('ry', '1');
+      hg.appendChild(rect);
+
+      g.appendChild(hg);
+    });
+
+    this.overlayLayer.appendChild(g);
   }
 
   getNearestPort(canvasX, canvasY, maxDist = 25) {
@@ -172,62 +291,42 @@ class CanvasController {
   renderConnectionHandles() {
     this.model.connections.forEach(conn => {
       if (this.model.selectedIds.includes(conn.id)) {
-        let p1, p2;
-        if (conn.sourceId && conn.targetId) {
-          const src = this.model.getElementById(conn.sourceId);
-          const tgt = this.model.getElementById(conn.targetId);
-          if (src && tgt) {
-            const srcPorts = ConnectorEngine.getBlockPorts(src);
-            const tgtPorts = ConnectorEngine.getBlockPorts(tgt);
-            p1 = srcPorts[conn.sourcePort || 'right'];
-            p2 = tgtPorts[conn.targetPort || 'left'];
-          }
-        } else if (conn.sourceId) {
-          const src = this.model.getElementById(conn.sourceId);
-          if (src) {
-            const srcPorts = ConnectorEngine.getBlockPorts(src);
-            p1 = srcPorts[conn.sourcePort || 'right'];
-          }
-          p2 = conn.p2 || { x: (p1 ? p1.x + 100 : 250), y: (p1 ? p1.y : 150) };
-        } else if (conn.targetId) {
-          const tgt = this.model.getElementById(conn.targetId);
-          if (tgt) {
-            const tgtPorts = ConnectorEngine.getBlockPorts(tgt);
-            p2 = tgtPorts[conn.targetPort || 'left'];
-          }
-          p1 = conn.p1 || { x: (p2 ? p2.x - 100 : 50), y: (p2 ? p2.y : 150) };
-        } else {
-          p1 = conn.p1 || { x: 50, y: 150 };
-          p2 = conn.p2 || { x: 250, y: 150 };
-        }
-
+        const { p1, p2 } = ConnectorEngine.getConnectionEndpoints(conn, this.model);
         if (!p1 || !p2) return;
 
-        // If no custom points or invalid length, route standard orthogonal
-        if (!conn.points || conn.points.length < 2) {
+        const isDirectStraight = Math.abs(p2.x - p1.x) < 2 || Math.abs(p2.y - p1.y) < 2;
+        if (!conn.points || conn.points.length < 2 || (conn.points.length === 2 && !isDirectStraight)) {
           conn.points = ConnectorEngine.routeOrthogonal(p1, p2);
         } else {
-          // Keep ends anchored to ports while preserving strict 90° orthogonality
-          conn.points[0] = { x: p1.x, y: p1.y };
-          conn.points[conn.points.length - 1] = { x: p2.x, y: p2.y };
-
-          if (conn.points.length === 4) {
-            // Check orientation of first segment
-            if (Math.abs(conn.points[0].y - conn.points[1].y) <= Math.abs(conn.points[0].x - conn.points[1].x)) {
-              // Horizontal-first: Seg 0 is horiz, Seg 1 is vert, Seg 2 is horiz
-              conn.points[1].y = p1.y;
-              conn.points[2].y = p2.y;
-              conn.points[2].x = conn.points[1].x;
-            } else {
-              // Vertical-first: Seg 0 is vert, Seg 1 is horiz, Seg 2 is vert
-              conn.points[1].x = p1.x;
-              conn.points[2].x = p2.x;
-              conn.points[2].y = conn.points[1].y;
-            }
-          }
+          conn.points[0].x = p1.x;
+          conn.points[0].y = p1.y;
+          const last = conn.points.length - 1;
+          conn.points[last].x = p2.x;
+          conn.points[last].y = p2.y;
         }
 
         const pts = conn.points;
+
+        // 0. QUICK REVERSE BUTTON: Floating ⇄ button near connection center
+        const midIdx = Math.floor(pts.length / 2);
+        const midPt = pts[midIdx];
+        const prevPt = pts[midIdx - 1] || pts[0];
+        const flipBtnX = (midPt.x + prevPt.x) / 2;
+        const flipBtnY = (midPt.y + prevPt.y) / 2 - 24;
+
+        const flipBtn = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        flipBtn.setAttribute('class', 'conn-flip-btn');
+        flipBtn.setAttribute('data-conn-id', conn.id);
+        flipBtn.setAttribute('style', 'cursor: pointer;');
+        flipBtn.innerHTML = `
+          <circle cx="${flipBtnX}" cy="${flipBtnY}" r="12" fill="#2563eb" stroke="#ffffff" stroke-width="2"/>
+          <text x="${flipBtnX}" y="${flipBtnY + 4}" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle" pointer-events="none">⇄</text>
+        `;
+        flipBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.reverseConnection(conn.id);
+        });
+        this.overlayLayer.appendChild(flipBtn);
 
         // 1. ENDPOINTS: Start (green) & End (blue)
         this.createHandle({
@@ -370,6 +469,12 @@ class CanvasController {
       case 'idef0_block':
         content = this.renderIdef0Block(el);
         break;
+      case 'idef0_purpose':
+        content = this.renderIdef0Purpose(el);
+        break;
+      case 'idef0_viewpoint':
+        content = this.renderIdef0Viewpoint(el);
+        break;
       case 'dfd_entity':
         content = this.renderDfdEntity(el);
         break;
@@ -392,9 +497,10 @@ class CanvasController {
         content = `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="#fff" stroke="#000" stroke-width="1.5"/>`;
     }
 
-    // Append connection ports (Left, Top, Right, Bottom)
+    // Append connection ports (Left, Top, Right, Bottom) - omitted for annotation notes
+    const isNote = el.type === 'idef0_purpose' || el.type === 'idef0_viewpoint';
     const ports = ConnectorEngine.getBlockPorts(el);
-    const portsSvg = `
+    const portsSvg = isNote ? '' : `
       <circle cx="${ports.left.x}" cy="${ports.left.y}" r="5" class="connection-port" data-port="left" data-id="${el.id}"/>
       <circle cx="${ports.top.x}" cy="${ports.top.y}" r="5" class="connection-port" data-port="top" data-id="${el.id}"/>
       <circle cx="${ports.right.x}" cy="${ports.right.y}" r="5" class="connection-port" data-port="right" data-id="${el.id}"/>
@@ -403,6 +509,38 @@ class CanvasController {
 
     g.innerHTML = content + portsSvg;
     return g;
+  }
+
+  renderIdef0Purpose(el) {
+    const lines = (el.name || '').split('\n');
+    const lh = 13;
+    let textSvg = '';
+    lines.forEach((line, i) => {
+      textSvg += `<text x="${el.x + 8}" y="${el.y + 33 + i * lh}" font-family="Times New Roman, serif" font-size="10" fill="#000000">${line}</text>`;
+    });
+
+    return `
+      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="#ffffff" stroke="#1e40af" stroke-width="1.5" rx="3" class="block-border"/>
+      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="18" fill="#eff6ff" stroke="#1e40af" stroke-width="1" rx="3"/>
+      <text x="${el.x + 8}" y="${el.y + 13}" font-family="Times New Roman, serif" font-size="10" font-weight="bold" fill="#1e40af">ЦЕЛЬ:</text>
+      ${textSvg}
+    `;
+  }
+
+  renderIdef0Viewpoint(el) {
+    const lines = (el.name || '').split('\n');
+    const lh = 13;
+    let textSvg = '';
+    lines.forEach((line, i) => {
+      textSvg += `<text x="${el.x + 8}" y="${el.y + 33 + i * lh}" font-family="Times New Roman, serif" font-size="10" fill="#000000">${line}</text>`;
+    });
+
+    return `
+      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5" rx="3" class="block-border"/>
+      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="18" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1" rx="3"/>
+      <text x="${el.x + 8}" y="${el.y + 13}" font-family="Times New Roman, serif" font-size="10" font-weight="bold" fill="#7c3aed">ТОЧКА ЗРЕНИЯ:</text>
+      ${textSvg}
+    `;
   }
 
   renderIdef0Block(el) {
@@ -427,95 +565,122 @@ class CanvasController {
   }
 
   renderDfdEntity(el) {
-    const lines = (el.name || '').split('\n');
+    const lines = (el.name || 'Внешняя сущность').split('\n');
+    const lh = 14;
+    const h = el.height || 60;
+    const totalTextH = lines.length * lh;
+    const startY = el.y + Math.max(6, (h - totalTextH) / 2) + 11;
     let textSvg = '';
     lines.forEach((l, i) => {
-      textSvg += `<text x="${el.x + el.width / 2}" y="${el.y + 24 + i * 14}" font-family="Times New Roman, serif" font-size="10" fill="#000" text-anchor="middle">${l}</text>`;
+      textSvg += `<text x="${el.x + el.width / 2}" y="${startY + i * lh}" font-family="'Times New Roman', serif" font-size="11" fill="#000000" text-anchor="middle">${l}</text>`;
     });
 
     return `
-      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="#ffffff" stroke="#000000" stroke-width="2" class="block-border"/>
-      <line x1="${el.x}" y1="${el.y + 6}" x2="${el.x + el.width}" y2="${el.y + 6}" stroke="#000" stroke-width="0.8"/>
+      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${h}" fill="#ffffff" stroke="#000000" stroke-width="1.5" class="block-border"/>
       ${textSvg}
     `;
   }
 
   renderDfdProcess(el) {
-    const rx = el.width / 2;
-    const ry = el.height / 2;
-    const cx = el.x + rx;
-    const cy = el.y + ry;
-    const lines = (el.name || '').split('\n');
+    const procId = el.procId || 'P1';
+    const lines = (el.name || 'Обработать\nданные').split('\n');
+    const lh = 13;
+    const h = Math.max(el.height || 70, 60);
+    const availableH = h - 26;
+    const totalTextH = lines.length * lh;
+    const startY = el.y + 24 + Math.max(0, (availableH - totalTextH) / 2) + 11;
     let textSvg = '';
     lines.forEach((l, i) => {
-      textSvg += `<text x="${cx}" y="${cy - (lines.length - 1) * 6 + i * 12}" font-family="Times New Roman, serif" font-size="9" fill="#000" text-anchor="middle">${l}</text>`;
+      textSvg += `<text x="${el.x + el.width / 2}" y="${startY + i * lh}" font-family="'Times New Roman', serif" font-size="10.5" fill="#000000" text-anchor="middle">${l}</text>`;
     });
 
     return `
-      <ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="#ffffff" stroke="#000000" stroke-width="2" class="block-border"/>
-      <ellipse cx="${cx}" cy="${cy}" rx="${rx - 5}" ry="${ry - 5}" fill="none" stroke="#000000" stroke-width="0.8"/>
-      <text x="${cx}" y="${cy - ry + 12}" font-family="Times New Roman, serif" font-size="8" font-weight="bold" fill="#000" text-anchor="middle">${el.procId || '1'}</text>
+      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${h}" rx="10" ry="10" fill="#ffffff" stroke="#000000" stroke-width="1.5" class="block-border"/>
+      <text x="${el.x + el.width / 2}" y="${el.y + 18}" font-family="'Times New Roman', serif" font-size="11" font-weight="bold" fill="#000000" text-anchor="middle">${procId}</text>
       ${textSvg}
     `;
   }
 
   renderDfdStore(el) {
-    const idWidth = 32;
+    const storeId = el.storeId || 'D1';
+    let rawName = el.name || 'Накопитель данных';
+    if (rawName.startsWith(storeId + ' ')) {
+      rawName = rawName.substring(storeId.length + 1);
+    }
+    const lines = rawName.split('\n');
+    const lh = 13;
+    const h = Math.max(el.height || 48, 48);
+    const availableH = h - 22;
+    const totalTextH = lines.length * lh;
+    const startY = el.y + 20 + Math.max(0, (availableH - totalTextH) / 2) + 11;
+    let textSvg = '';
+    lines.forEach((l, i) => {
+      textSvg += `<text x="${el.x + el.width / 2}" y="${startY + i * lh}" font-family="'Times New Roman', serif" font-size="10.5" font-weight="bold" fill="#000000" text-anchor="middle">${l}</text>`;
+    });
+
     return `
-      <!-- Fully closed rectangle per GOST and accepted reports -->
-      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="#ffffff" stroke="#000000" stroke-width="2" class="block-border"/>
-      <!-- ID column -->
-      <rect x="${el.x}" y="${el.y}" width="${idWidth}" height="${el.height}" fill="#f1f5f9" stroke="#000000" stroke-width="1.5"/>
-      <text x="${el.x + idWidth / 2}" y="${el.y + el.height / 2 + 4}" font-family="Times New Roman, serif" font-size="10" font-weight="bold" fill="#000000" text-anchor="middle">${el.storeId || 'D1'}</text>
-      <!-- Name -->
-      <text x="${el.x + idWidth + 8}" y="${el.y + el.height / 2 + 4}" font-family="Times New Roman, serif" font-size="10" fill="#000000">${el.name || 'Накопитель данных'}</text>
+      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${h}" fill="#ffffff" stroke="#000000" stroke-width="1.5" class="block-border"/>
+      <text x="${el.x + el.width / 2}" y="${el.y + 17}" font-family="'Times New Roman', serif" font-size="11" font-weight="bold" fill="#000000" text-anchor="middle">${storeId}</text>
+      ${textSvg}
     `;
   }
 
   renderIdef1xEntity(el) {
-    const rx = el.isDep ? 8 : 0;
-    const headerH = 20;
-    const pks = el.pks || ['id (PK)'];
-    const attrs = el.attrs || ['attribute'];
-    const rowH = 16;
-    const totalH = headerH + (pks.length + attrs.length) * rowH + 6;
-    el.height = totalH; // sync calculated height
+    const rx = el.isDep ? 10 : 0;
+    const headerH = 22;
+    const pks = el.pks && el.pks.length > 0 ? el.pks : ['PK id'];
+    const attrs = el.attrs && el.attrs.length > 0 ? el.attrs : ['attribute'];
+    const rowH = 14;
 
-    let rowsSvg = '';
+    const minH = headerH + (pks.length + attrs.length) * rowH + 12;
+    const totalH = Math.max(el.height || minH, minH);
+    el.height = totalH;
+
+    const headerText = el.name || 'ENTITY_NAME';
+
+    let pkSvg = '';
     pks.forEach((pk, i) => {
-      rowsSvg += `<text x="${el.x + 6}" y="${el.y + headerH + 13 + i * rowH}" font-family="Times New Roman, serif" font-size="9" fill="#dc2626" font-weight="bold">🔑 ${pk}</text>`;
+      const lineText = pk.startsWith('PK') ? pk : `PK ${pk}`;
+      pkSvg += `<text x="${el.x + 8}" y="${el.y + headerH + 11 + i * rowH}" font-family="'Times New Roman', serif" font-size="9.5" fill="#000000">${lineText}</text>`;
     });
 
-    const pkEndY = el.y + headerH + pks.length * rowH + 2;
-    rowsSvg += `<line x1="${el.x}" y1="${pkEndY}" x2="${el.x + el.width}" y2="${pkEndY}" stroke="#000000" stroke-width="1"/>`;
+    const pkEndY = el.y + headerH + pks.length * rowH + 3;
 
+    let attrsSvg = '';
     attrs.forEach((attr, j) => {
-      rowsSvg += `<text x="${el.x + 6}" y="${pkEndY + 13 + j * rowH}" font-family="Times New Roman, serif" font-size="9" fill="#000000">• ${attr}</text>`;
+      attrsSvg += `<text x="${el.x + 8}" y="${pkEndY + 11 + j * rowH}" font-family="'Times New Roman', serif" font-size="9" fill="#000000">${attr}</text>`;
     });
 
     return `
-      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${totalH}" rx="${rx}" ry="${rx}" fill="#ffffff" stroke="#000000" stroke-width="2" class="block-border"/>
-      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${headerH}" rx="${rx}" ry="${rx}" fill="#1e40af" stroke="#000000" stroke-width="1.5"/>
-      <text x="${el.x + el.width / 2}" y="${el.y + 14}" font-family="Times New Roman, serif" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">${el.name}</text>
-      ${rowsSvg}
+      <!-- Entity Box: clean white background, sharp or rounded corners per GOST/IDEF1X -->
+      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${totalH}" rx="${rx}" ry="${rx}" fill="#ffffff" stroke="#000000" stroke-width="1.5" class="block-border"/>
+      <!-- Header -->
+      <text x="${el.x + el.width / 2}" y="${el.y + 15}" font-family="'Times New Roman', serif" font-size="10.5" font-weight="bold" fill="#000000" text-anchor="middle">${headerText}</text>
+      <line x1="${el.x}" y1="${el.y + headerH}" x2="${el.x + el.width}" y2="${el.y + headerH}" stroke="#000000" stroke-width="1.2"/>
+      <!-- PK Section -->
+      ${pkSvg}
+      <line x1="${el.x}" y1="${pkEndY}" x2="${el.x + el.width}" y2="${pkEndY}" stroke="#000000" stroke-width="1.2"/>
+      <!-- Non-PK Section -->
+      ${attrsSvg}
     `;
   }
 
   renderIdef3Uob(el) {
-    const barH = 18;
     const lines = (el.name || '').split('\n');
+    const lh = 13;
+    const totalTextH = lines.length * lh;
+    const startY = el.y + Math.max(18, (el.height - totalTextH) / 2) + 10;
     let textSvg = '';
     lines.forEach((l, i) => {
-      textSvg += `<text x="${el.x + el.width / 2}" y="${el.y + 20 + i * 14}" font-family="Times New Roman, serif" font-size="10" fill="#000" text-anchor="middle">${l}</text>`;
+      textSvg += `<text x="${el.x + el.width / 2}" y="${startY + i * lh}" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000" text-anchor="middle">${l}</text>`;
     });
 
+    const uobId = el.uobId !== undefined ? el.uobId : 'UOB1';
+
     return `
-      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="#ffffff" stroke="#000000" stroke-width="2" class="block-border"/>
+      <rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="#ffffff" stroke="#000000" stroke-width="1.5" class="block-border"/>
+      <text x="${el.x + 8}" y="${el.y + 14}" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#000000">${uobId}</text>
       ${textSvg}
-      <line x1="${el.x}" y1="${el.y + el.height - barH}" x2="${el.x + el.width}" y2="${el.y + el.height - barH}" stroke="#000000" stroke-width="1.2"/>
-      <rect x="${el.x}" y="${el.y + el.height - barH}" width="${el.width}" height="${barH}" fill="#f3f4f6"/>
-      <text x="${el.x + 6}" y="${el.y + el.height - 5}" font-family="Times New Roman, serif" font-size="8" font-weight="bold" fill="#000">${el.uobId || 'J1.1'}</text>
-      <text x="${el.x + el.width - 6}" y="${el.y + el.height - 5}" font-family="Times New Roman, serif" font-size="8" fill="#6b7280" text-anchor="end">${el.status || 'Выполняется'}</text>
     `;
   }
 
@@ -523,25 +688,95 @@ class CanvasController {
     const r = el.width / 2;
     const cx = el.x + r;
     const cy = el.y + r;
+    let labelSvg = '';
+    if (el.name && el.name.trim() && el.name.trim() !== (el.juncType || 'X')) {
+      labelSvg = `<text x="${cx}" y="${cy + r + 13}" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="9" fill="#000000" text-anchor="middle">${el.name}</text>`;
+    }
     return `
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="#ffffff" stroke="#000000" stroke-width="2" class="block-border"/>
-      <text x="${cx}" y="${cy + 5}" font-family="Times New Roman, serif" font-size="14" font-weight="bold" fill="#000000" text-anchor="middle">${el.juncType || '&'}</text>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="#ffffff" stroke="#000000" stroke-width="1.5" class="block-border"/>
+      <text x="${cx}" y="${cy + 4.5}" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#000000" text-anchor="middle">${el.juncType || 'X'}</text>
+      ${labelSvg}
     `;
+  }
+
+  setPanMode(enabled) {
+    this.isPanModeActive = enabled;
+    this.updateCursor();
+  }
+
+  updateCursor() {
+    if (this.isPanModeActive || this.isSpacePressed) {
+      this.container.style.cursor = 'grab';
+    } else {
+      this.container.style.cursor = 'default';
+    }
+  }
+
+  resetZoom() {
+    this.scale = 0.85;
+    this.panX = 40;
+    this.panY = 30;
+    this.applyTransform();
+  }
+
+  fitToScreen() {
+    const cw = this.container.clientWidth || window.innerWidth;
+    const ch = this.container.clientHeight || window.innerHeight;
+    const scale = Math.min((cw - 80) / this.model.width, (ch - 80) / this.model.height, 1.5);
+    this.scale = Math.max(0.3, Math.min(2.0, scale));
+    this.panX = Math.round((cw - this.model.width * this.scale) / 2);
+    this.panY = Math.round((ch - this.model.height * this.scale) / 2);
+    this.applyTransform();
   }
 
   // ── Event Handlers ──
   initEvents() {
+    // Space bar pan mode support
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable) return;
+      if (e.code === 'Space' && !this.isSpacePressed) {
+        this.isSpacePressed = true;
+        this.updateCursor();
+        e.preventDefault();
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') {
+        this.isSpacePressed = false;
+        this.updateCursor();
+      }
+    });
+
+    window.addEventListener('blur', () => {
+      this.isSpacePressed = false;
+      this.isPanning = false;
+      this.updateCursor();
+    });
     // Canvas Mouse Down
     this.container.addEventListener('mousedown', (e) => {
-      // Space or Middle Click = Pan
-      if (e.spaceKey || e.button === 1 || (e.button === 0 && e.target === this.container)) {
+      // Pan if Pan mode is active, Space is pressed, or Middle mouse clicked
+      if (this.isPanModeActive || this.isSpacePressed || e.button === 1) {
         this.isPanning = true;
         this.panStart = { x: e.clientX - this.panX, y: e.clientY - this.panY };
         this.container.style.cursor = 'grabbing';
+        e.preventDefault();
         return;
       }
 
       // Connection Handle Drag (Endpoints, Corners, Segments)
+      const canvasCorner = e.target.closest('.canvas-corner-resize-handle');
+      if (canvasCorner) {
+        this.isResizingCanvas = true;
+        const pt = this.screenToCanvasPoint(e.clientX, e.clientY);
+        this.canvasResizeStartPt = pt;
+        this.canvasResizeStartDim = { w: this.model.width, h: this.model.height };
+        document.body.style.cursor = 'nwse-resize';
+        e.stopPropagation();
+        e.preventDefault();
+        return;
+      }
+
       const connHandle = e.target.closest('.conn-handle-group');
       if (connHandle) {
         const connId = connHandle.getAttribute('data-conn-id');
@@ -568,7 +803,9 @@ class CanvasController {
       const metaNode = e.target.closest('.editable-meta');
       if (metaNode) {
         const fieldName = metaNode.getAttribute('data-field');
-        this.showInlineMetaEditor(metaNode, fieldName, e);
+        if (this.app) {
+          this.app.focusMasterField(fieldName);
+        }
         e.stopPropagation();
         return;
       }
@@ -629,6 +866,29 @@ class CanvasController {
         return;
       }
 
+      // Element Resize Handle Drag
+      const resizeHandle = e.target.closest('.element-resize-handle');
+      if (resizeHandle) {
+        const elId = resizeHandle.getAttribute('data-element-id');
+        const handle = resizeHandle.getAttribute('data-handle');
+        const el = this.model.getElementById(elId);
+        if (el) {
+          const pt = this.screenToCanvasPoint(e.clientX, e.clientY);
+          this.resizeTarget = {
+            el,
+            handle,
+            startPt: pt,
+            startX: el.x,
+            startY: el.y,
+            startW: el.width,
+            startH: el.height
+          };
+          e.stopPropagation();
+          e.preventDefault();
+          return;
+        }
+      }
+
       // Element Selection & Drag
       const elNode = e.target.closest('.svg-element');
       if (elNode) {
@@ -651,14 +911,40 @@ class CanvasController {
         return;
       }
 
-      // Clear selection on background click
-      this.model.selectedIds = [];
-      this.render();
-      if (this.app) this.app.updateInspector();
+      // Background click: clear selection and allow panning via left-click drag on background
+      if (this.model.selectedIds.length > 0) {
+        this.model.selectedIds = [];
+        this.render();
+        if (this.app) this.app.updateInspector();
+      }
+
+      if (e.button === 0) {
+        this.isPanning = true;
+        this.panStart = { x: e.clientX - this.panX, y: e.clientY - this.panY };
+        this.container.style.cursor = 'grabbing';
+      }
     });
 
     // Window Mouse Move
     window.addEventListener('mousemove', (e) => {
+      if (this.isResizingCanvas) {
+        const pt = this.screenToCanvasPoint(e.clientX, e.clientY);
+        const dx = pt.x - this.canvasResizeStartPt.x;
+        const dy = pt.y - this.canvasResizeStartPt.y;
+        const snap = 10;
+        const newW = Math.max(700, Math.min(5000, Math.round((this.canvasResizeStartDim.w + dx) / snap) * snap));
+        const newH = Math.max(500, Math.min(4000, Math.round((this.canvasResizeStartDim.h + dy) / snap) * snap));
+        if (newW !== this.model.width || newH !== this.model.height) {
+          this.model.width = newW;
+          this.model.height = newH;
+          this.render();
+          if (this.app) {
+            this.app.updateCanvasSizeInputs();
+          }
+        }
+        return;
+      }
+
       if (this.isPanning) {
         this.panX = e.clientX - this.panStart.x;
         this.panY = e.clientY - this.panStart.y;
@@ -674,7 +960,6 @@ class CanvasController {
         const pts = conn.points;
 
         if (type === 'endpoint_start') {
-          // Snap to nearest port if close
           const nearest = this.getNearestPort(pt.x, pt.y, 25);
           const targetPt = nearest ? { x: nearest.x, y: nearest.y } : {
             x: Math.round(pt.x / snap) * snap,
@@ -682,12 +967,15 @@ class CanvasController {
           };
           pts[0].x = targetPt.x;
           pts[0].y = targetPt.y;
-          // Keep first segment strictly orthogonal
           if (pts.length > 2) {
             if (Math.abs(pts[0].y - pts[1].y) <= Math.abs(pts[0].x - pts[1].x)) {
               pts[1].y = targetPt.y;
             } else {
               pts[1].x = targetPt.x;
+            }
+          } else {
+            if (Math.abs(pts[0].x - pts[1].x) >= 2 && Math.abs(pts[0].y - pts[1].y) >= 2) {
+              conn.points = ConnectorEngine.routeOrthogonal(pts[0], pts[1]);
             }
           }
           this.updateConnectionPathInDom(conn);
@@ -703,12 +991,15 @@ class CanvasController {
           const lastIdx = pts.length - 1;
           pts[lastIdx].x = targetPt.x;
           pts[lastIdx].y = targetPt.y;
-          // Keep last segment strictly orthogonal
           if (pts.length > 2) {
             if (Math.abs(pts[lastIdx].y - pts[lastIdx - 1].y) <= Math.abs(pts[lastIdx].x - pts[lastIdx - 1].x)) {
               pts[lastIdx - 1].y = targetPt.y;
             } else {
               pts[lastIdx - 1].x = targetPt.x;
+            }
+          } else {
+            if (Math.abs(pts[0].x - pts[lastIdx].x) >= 2 && Math.abs(pts[0].y - pts[lastIdx].y) >= 2) {
+              conn.points = ConnectorEngine.routeOrthogonal(pts[0], pts[lastIdx]);
             }
           }
           this.updateConnectionPathInDom(conn);
@@ -718,21 +1009,39 @@ class CanvasController {
         if (type === 'corner') {
           const newX = Math.round(pt.x / snap) * snap;
           const newY = Math.round(pt.y / snap) * snap;
-          const prev = pts[ptIdx - 1];
-          const next = pts[ptIdx + 1];
+          const pPrev = pts[ptIdx - 1];
+          const pCurr = pts[ptIdx];
+          const pNext = pts[ptIdx + 1];
 
-          // Check if segment from prev is horizontal or vertical
-          const prevHoriz = Math.abs(prev.y - pts[ptIdx].y) <= Math.abs(prev.x - pts[ptIdx].x);
-          if (prevHoriz) {
-            if (ptIdx - 1 > 0) prev.y = newY;
-            pts[ptIdx].y = (ptIdx - 1 === 0 && conn.sourceId) ? prev.y : newY;
-            if (ptIdx + 1 < pts.length - 1) next.x = newX;
-            pts[ptIdx].x = (ptIdx + 1 === pts.length - 1 && conn.targetId) ? next.x : newX;
+          // Determine whether segment before this corner is horizontal or vertical
+          const segPrevHoriz = Math.abs(pPrev.y - pCurr.y) <= Math.abs(pPrev.x - pCurr.x);
+
+          if (segPrevHoriz) {
+            // Segment before (ptIdx-1 to ptIdx) is horizontal
+            // Segment after (ptIdx to ptIdx+1) is vertical
+            // 1. Moving horizontally shifts the vertical segment (both this corner and next corner move in X)
+            pts[ptIdx].x = newX;
+            if (ptIdx + 1 < pts.length - 1) {
+              pts[ptIdx + 1].x = newX;
+            }
+            // 2. Moving vertically shifts the horizontal segment (only if inner segment, not fixed endpoint)
+            if (ptIdx - 1 > 0) {
+              pts[ptIdx - 1].y = newY;
+              pts[ptIdx].y = newY;
+            }
           } else {
-            if (ptIdx - 1 > 0) prev.x = newX;
-            pts[ptIdx].x = (ptIdx - 1 === 0 && conn.sourceId) ? prev.x : newX;
-            if (ptIdx + 1 < pts.length - 1) next.y = newY;
-            pts[ptIdx].y = (ptIdx + 1 === pts.length - 1 && conn.targetId) ? next.y : newY;
+            // Segment before (ptIdx-1 to ptIdx) is vertical
+            // Segment after (ptIdx to ptIdx+1) is horizontal
+            // 1. Moving horizontally shifts the vertical segment (only if inner segment, not fixed endpoint)
+            if (ptIdx - 1 > 0) {
+              pts[ptIdx - 1].x = newX;
+              pts[ptIdx].x = newX;
+            }
+            // 2. Moving vertically shifts the horizontal segment (both this corner and next corner move in Y)
+            pts[ptIdx].y = newY;
+            if (ptIdx + 1 < pts.length - 1) {
+              pts[ptIdx + 1].y = newY;
+            }
           }
 
           this.updateConnectionPathInDom(conn);
@@ -778,6 +1087,64 @@ class CanvasController {
         return;
       }
 
+      if (this.resizeTarget) {
+        const pt = this.screenToCanvasPoint(e.clientX, e.clientY);
+        const dx = pt.x - this.resizeTarget.startPt.x;
+        const dy = pt.y - this.resizeTarget.startPt.y;
+        const { el, handle, startX, startY, startW, startH } = this.resizeTarget;
+
+        const minW = (el.type === 'idef3_junction') ? 24 : 50;
+        const minH = (el.type === 'idef3_junction') ? 24 : 30;
+        const snap = 5;
+
+        let newX = startX;
+        let newY = startY;
+        let newW = startW;
+        let newH = startH;
+
+        if (handle.includes('e')) {
+          newW = Math.max(minW, Math.round((startW + dx) / snap) * snap);
+        }
+        if (handle.includes('s')) {
+          newH = Math.max(minH, Math.round((startH + dy) / snap) * snap);
+        }
+        if (handle.includes('w')) {
+          const proposedW = Math.round((startW - dx) / snap) * snap;
+          if (proposedW >= minW) {
+            newW = proposedW;
+            newX = startX + (startW - proposedW);
+          } else {
+            newW = minW;
+            newX = startX + (startW - minW);
+          }
+        }
+        if (handle.includes('n')) {
+          const proposedH = Math.round((startH - dy) / snap) * snap;
+          if (proposedH >= minH) {
+            newH = proposedH;
+            newY = startY + (startH - proposedH);
+          } else {
+            newH = minH;
+            newY = startY + (startH - minH);
+          }
+        }
+
+        // Keep within diagram boundary
+        if (newX < 10) { newW -= (10 - newX); newX = 10; }
+        if (newY < 80) { newH -= (80 - newY); newY = 80; }
+        newW = Math.max(minW, newW);
+        newH = Math.max(minH, newH);
+
+        el.x = newX;
+        el.y = newY;
+        el.width = newW;
+        el.height = newH;
+
+        this.render();
+        if (this.app) this.app.updateInspector();
+        return;
+      }
+
       if (this.dragTarget) {
         const pt = this.screenToCanvasPoint(e.clientX, e.clientY);
         // 10px Grid snap
@@ -797,9 +1164,20 @@ class CanvasController {
 
     // Window Mouse Up
     window.addEventListener('mouseup', (e) => {
+      if (this.isResizingCanvas) {
+        this.isResizingCanvas = false;
+        this.canvasResizeStartPt = null;
+        this.canvasResizeStartDim = null;
+        document.body.style.cursor = '';
+        if (this.app) {
+          this.app.recordHistory();
+          this.app.saveCurrentDiagramToStorage();
+          this.app.updateCanvasSizeInputs();
+        }
+      }
       if (this.isPanning) {
         this.isPanning = false;
-        this.container.style.cursor = 'default';
+        this.updateCursor();
       }
 
       if (this.dragHandleTarget) {
@@ -835,6 +1213,18 @@ class CanvasController {
           }
         }
 
+        // Ensure free connection p1/p2 match points
+        if (!conn.sourceId && conn.points && conn.points.length > 0) {
+          conn.p1 = { x: conn.points[0].x, y: conn.points[0].y };
+        }
+        if (!conn.targetId && conn.points && conn.points.length > 0) {
+          conn.p2 = { x: conn.points[conn.points.length - 1].x, y: conn.points[conn.points.length - 1].y };
+        }
+        const lastPt = conn.points[conn.points.length - 1];
+        if (conn.points.length === 2 && Math.abs(conn.points[0].x - lastPt.x) >= 2 && Math.abs(conn.points[0].y - lastPt.y) >= 2) {
+          conn.points = ConnectorEngine.routeOrthogonal(conn.points[0], lastPt);
+        }
+
         this.dragHandleTarget = null;
         this.render();
         if (this.app) this.app.recordHistory();
@@ -844,6 +1234,15 @@ class CanvasController {
         this.dragLabelTarget = null;
         document.querySelectorAll('.conn-label-group.dragging').forEach(n => n.classList.remove('dragging'));
         if (this.app) this.app.recordHistory();
+      }
+
+      if (this.resizeTarget) {
+        this.resizeTarget = null;
+        this.render();
+        if (this.app) {
+          this.app.updateInspector();
+          this.app.recordHistory();
+        }
       }
 
       if (this.dragTarget) {
@@ -874,12 +1273,110 @@ class CanvasController {
       this.app.addShapeFromPalette(type, dropX, dropY);
     });
 
-    // Zoom on wheel
+    // Touchpad 2-finger panning & Pinch-to-zoom / Mouse wheel pan & Ctrl-zoom
     this.container.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-      this.zoom(zoomFactor, e.clientX, e.clientY);
+
+      // Touchpad pinch-to-zoom OR Ctrl/Meta + wheel
+      if (e.ctrlKey || e.metaKey) {
+        const delta = e.deltaMode === 1 ? e.deltaY * 20 : e.deltaY;
+        const zoomFactor = Math.min(1.2, Math.max(0.8, Math.exp(-delta * 0.003)));
+        this.zoom(zoomFactor, e.clientX, e.clientY);
+        return;
+      }
+
+      // 2-finger touchpad swipe OR mouse wheel
+      let dx = e.deltaX;
+      let dy = e.deltaY;
+
+      if (e.deltaMode === 1) { // Lines
+        dx *= 20;
+        dy *= 20;
+      } else if (e.deltaMode === 2) { // Pages
+        dx *= 400;
+        dy *= 400;
+      }
+
+      // Shift + Wheel converts vertical to horizontal pan
+      if (e.shiftKey && dx === 0 && dy !== 0) {
+        dx = dy;
+        dy = 0;
+      }
+
+      this.panX -= dx;
+      this.panY -= dy;
+      this.applyTransform();
     }, { passive: false });
+
+    // Touch gestures support (Touchscreen / Multi-touch)
+    let touchState = {
+      isTouch: false,
+      startX: 0,
+      startY: 0,
+      initialDist: 0,
+      initialScale: 1,
+      center: { x: 0, y: 0 }
+    };
+
+    const getTouchDist = (t1, t2) => Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    const getTouchCenter = (t1, t2) => ({
+      x: (t1.clientX + t2.clientX) / 2,
+      y: (t1.clientY + t2.clientY) / 2
+    });
+
+    this.container.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const target = e.target;
+        const isInteractive = target.closest('.conn-handle-group, .editable-meta, .status-cell-click, .remark-item-click, .conn-label-group, .connection-port, .element-resize-handle, .svg-element, .svg-connection');
+        if (!isInteractive || this.isPanModeActive || this.isSpacePressed) {
+          touchState.isTouch = true;
+          touchState.startX = e.touches[0].clientX - this.panX;
+          touchState.startY = e.touches[0].clientY - this.panY;
+        }
+      } else if (e.touches.length === 2) {
+        touchState.isTouch = true;
+        touchState.initialDist = getTouchDist(e.touches[0], e.touches[1]);
+        touchState.initialScale = this.scale;
+        touchState.center = getTouchCenter(e.touches[0], e.touches[1]);
+        touchState.startX = touchState.center.x - this.panX;
+        touchState.startY = touchState.center.y - this.panY;
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    this.container.addEventListener('touchmove', (e) => {
+      if (!touchState.isTouch) return;
+      if (e.touches.length === 1) {
+        this.panX = e.touches[0].clientX - touchState.startX;
+        this.panY = e.touches[0].clientY - touchState.startY;
+        this.applyTransform();
+        e.preventDefault();
+      } else if (e.touches.length === 2) {
+        const currentDist = getTouchDist(e.touches[0], e.touches[1]);
+        const center = getTouchCenter(e.touches[0], e.touches[1]);
+        if (touchState.initialDist > 0) {
+          const factor = currentDist / touchState.initialDist;
+          const targetScale = Math.max(0.3, Math.min(2.5, touchState.initialScale * factor));
+          const scaleChange = targetScale / this.scale;
+          this.panX -= (center.x - this.panX) * (scaleChange - 1);
+          this.panY -= (center.y - this.panY) * (scaleChange - 1);
+          this.scale = targetScale;
+          this.panX += (center.x - touchState.center.x);
+          this.panY += (center.y - touchState.center.y);
+          touchState.center = center;
+          touchState.initialDist = currentDist;
+          touchState.initialScale = targetScale;
+          this.applyTransform();
+        }
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    const endTouch = () => {
+      touchState.isTouch = false;
+    };
+    this.container.addEventListener('touchend', endTouch);
+    this.container.addEventListener('touchcancel', endTouch);
 
     // Double Click to edit label (both blocks and arrow labels!)
     this.container.addEventListener('dblclick', (e) => {
@@ -928,6 +1425,35 @@ class CanvasController {
     if (this.app) this.app.updateInspector();
   }
 
+  reverseConnection(connId) {
+    const conn = this.model.getConnectionById(connId);
+    if (!conn) return;
+
+    // Swap source and target endpoints
+    const tmpSourceId = conn.sourceId;
+    const tmpSourcePort = conn.sourcePort;
+    conn.sourceId = conn.targetId;
+    conn.sourcePort = conn.targetPort;
+    conn.targetId = tmpSourceId;
+    conn.targetPort = tmpSourcePort;
+
+    if (conn.p1 && conn.p2) {
+      const tmpP = { ...conn.p1 };
+      conn.p1 = { ...conn.p2 };
+      conn.p2 = tmpP;
+    }
+
+    if (conn.points && conn.points.length > 1) {
+      conn.points.reverse();
+    }
+
+    this.render();
+    if (this.app) {
+      this.app.updateInspector();
+      this.app.recordHistory();
+    }
+  }
+
   selectConnection(id) {
     this.model.selectedIds = [id];
     this.render();
@@ -940,17 +1466,27 @@ class CanvasController {
     const ports = ConnectorEngine.getBlockPorts(src);
     const startPt = ports[portSide];
 
+    // Default neutral dark arrow (#1e293b); only colored when explicitly picked from palette or set in inspector
+    let defaultType = 'output';
+    if (this.model.type === 'dfd' || (src.type && src.type.startsWith('dfd_'))) {
+      defaultType = 'dataflow';
+    } else if (this.model.type === 'idef3' || (src.type && src.type.startsWith('idef3_'))) {
+      defaultType = 'precedence';
+    } else if (this.model.type === 'idef1x' || (src.type && src.type.startsWith('idef1x_'))) {
+      defaultType = 'rel_ident';
+    }
+
     this.tempConnection = {
       sourceId: blockId,
       sourcePort: portSide,
       startPt: startPt,
-      icomType: startPt.type || 'input'
+      icomType: defaultType
     };
 
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('id', 'temp-conn-line');
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', ConnectorEngine.ICOM_COLORS[this.tempConnection.icomType]);
+    path.setAttribute('stroke', ConnectorEngine.ICOM_COLORS[this.tempConnection.icomType] || '#1e293b');
     path.setAttribute('stroke-width', '2');
     path.setAttribute('stroke-dasharray', '4,3');
     this.overlayLayer.appendChild(path);
@@ -973,13 +1509,52 @@ class CanvasController {
       const tgtSide = targetPort.getAttribute('data-port');
 
       if (tgtId !== this.tempConnection.sourceId) {
+        const src = this.model.getElementById(this.tempConnection.sourceId);
+        const tgt = this.model.getElementById(tgtId);
+
+        let finalType = this.tempConnection.icomType;
+        let defaultLabel = 'Поток';
+        if (this.model.type === 'dfd' || (src && src.type && src.type.startsWith('dfd_')) || (tgt && tgt.type && tgt.type.startsWith('dfd_'))) {
+          finalType = 'dataflow';
+          defaultLabel = 'Поток данных';
+        } else if (this.model.type === 'idef3' || (src && src.type && src.type.startsWith('idef3_')) || (tgt && tgt.type && tgt.type.startsWith('idef3_'))) {
+          finalType = 'precedence';
+          defaultLabel = '';
+        } else if (this.model.type === 'idef1x' || (src && src.type && src.type.startsWith('idef1x_')) || (tgt && tgt.type && tgt.type.startsWith('idef1x_'))) {
+          finalType = 'rel_ident';
+          defaultLabel = 'Связь сущностей';
+        } else {
+          finalType = 'output';
+          defaultLabel = 'Интерфейсный поток';
+        }
+
+        let actualSourceId = this.tempConnection.sourceId;
+        let actualSourcePort = this.tempConnection.sourcePort;
+        let actualTargetId = tgtId;
+        let actualTargetPort = tgtSide;
+
+        // Smart orientation: if user dragged from an Input port ('left') to an Output/source port ('right'),
+        // OR from a Process's input port ('left') to an Entity or Store:
+        // orient so data flows INTO the input port!
+        const srcIsProcess = src && (src.type === 'dfd_process' || src.type === 'idef0_block');
+        const tgtIsSource = tgt && (tgt.type === 'dfd_entity' || tgt.type === 'dfd_store');
+        const isFromInputToOutput = (this.tempConnection.sourcePort === 'left' && tgtSide === 'right');
+        const isFromProcessInputToEntity = (srcIsProcess && this.tempConnection.sourcePort === 'left' && tgtIsSource);
+
+        if (isFromInputToOutput || isFromProcessInputToEntity) {
+          actualSourceId = tgtId;
+          actualSourcePort = tgtSide;
+          actualTargetId = this.tempConnection.sourceId;
+          actualTargetPort = this.tempConnection.sourcePort;
+        }
+
         this.model.addConnection({
-          sourceId: this.tempConnection.sourceId,
-          sourcePort: this.tempConnection.sourcePort,
-          targetId: tgtId,
-          targetPort: tgtSide,
-          icomType: this.tempConnection.icomType,
-          label: 'Интерфейсный поток'
+          sourceId: actualSourceId,
+          sourcePort: actualSourcePort,
+          targetId: actualTargetId,
+          targetPort: actualTargetPort,
+          icomType: finalType,
+          label: defaultLabel
         });
         this.render();
         if (this.app) this.app.recordHistory();
@@ -997,10 +1572,11 @@ class CanvasController {
     textarea.value = el.name || '';
 
     const rect = this.svgEl.getBoundingClientRect();
-    textarea.style.left = `${rect.left + el.x * this.scale + 10}px`;
-    textarea.style.top = `${rect.top + el.y * this.scale + 10}px`;
-    textarea.style.width = `${Math.max(120, el.width * this.scale - 20)}px`;
-    textarea.style.height = `${Math.max(50, el.height * this.scale - 20)}px`;
+    const topOffset = (el.type === 'idef0_purpose' || el.type === 'idef0_viewpoint') ? 20 : 10;
+    textarea.style.left = `${rect.left + el.x * this.scale + 8}px`;
+    textarea.style.top = `${rect.top + (el.y + topOffset) * this.scale}px`;
+    textarea.style.width = `${Math.max(120, (el.width - 16) * this.scale)}px`;
+    textarea.style.height = `${Math.max(40, (el.height - topOffset - 6) * this.scale)}px`;
 
     document.body.appendChild(textarea);
     textarea.focus();
@@ -1064,60 +1640,12 @@ class CanvasController {
   }
 
   showInlineMetaEditor(metaNode, fieldName, e) {
-    // Switch to 'tab-master' tab in inspector silently so sidebar is in sync
     if (this.app) {
-      this.app.switchInspectorTab('tab-master');
+      this.app.focusMasterField(fieldName);
     }
-
-    const currentVal = this.model.masterPage[fieldName] || '';
-    const isMultiline = fieldName === 'title' || fieldName === 'project';
-    const input = document.createElement(isMultiline ? 'textarea' : 'input');
-    if (!isMultiline) input.type = 'text';
-    input.className = 'canvas-text-editor';
-    input.value = currentVal;
-
-    const rect = metaNode.getBoundingClientRect();
-    input.style.left = `${Math.max(10, rect.left - 2)}px`;
-    input.style.top = `${Math.max(10, rect.top - 2)}px`;
-    input.style.width = `${Math.max(120, rect.width + 10)}px`;
-    input.style.height = `${Math.max(26, rect.height + 4)}px`;
-
-    document.body.appendChild(input);
-    
-    input.focus();
-    input.select();
-
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      this.model.masterPage[fieldName] = input.value.trim();
-      input.remove();
-      this.render();
-      if (this.app) {
-        this.app.updateInspector();
-        this.app.recordHistory();
-      }
-    };
-
-    // Guard against instant blur race condition from the click event
-    let canBlur = false;
-    setTimeout(() => { canBlur = true; }, 200);
-
-    input.addEventListener('blur', () => {
-      if (canBlur) finish();
-    });
-
-    input.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' && (!isMultiline || !ev.shiftKey)) {
-        ev.preventDefault();
-        finish();
-      } else if (ev.key === 'Escape') {
-        finished = true;
-        input.remove();
-      }
-    });
   }
+
+  
 }
 
 window.CanvasController = CanvasController;

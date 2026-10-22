@@ -3,15 +3,14 @@
  * Compliant with GOST R 50.1.028-2001 (IDEF0) and related SADT standards
  */
 
-class DiagramModel {
-  constructor(type = 'idef0_context') {
-    this.id = 'diag_' + Date.now();
-    this.type = type; // 'idef0_context' | 'idef0_decomp' | 'dfd' | 'idef1x' | 'idef3'
-    this.width = 1200;
-    this.height = 820;
+/**
+ * IDEF Builder - Data Model & State Management
+ * Compliant with GOST R 50.1.028-2001 (IDEF0) and related SADT standards
+ */
 
-    // Standard GOST R 50.1.028-2001 Appendix A Metadata
-    this.masterPage = {
+class DiagramModel {
+  static getDefaultMasterPage() {
+    return {
       usedAt: 'ЛР3 ГУАП',
       rd: 'РД по моделированию',
       author: 'Энгельгардт К. А.',
@@ -32,8 +31,22 @@ class DiagramModel {
       title: 'Управлять жизненным циклом дизайн-проектов',
       cnumber: '1',
       page: '1',
-      agreement: 'Цель проекта и соглашение по ведению проекта'
+      agreement: 'Цель проекта и соглашение по ведению проекта',
+      frameStyle: 'gost' // 'gost' | 'dfd' | 'none'
     };
+  }
+
+  constructor(type = 'idef0_context') {
+    this.id = 'diag_' + Date.now();
+    this.type = type; // 'idef0_context' | 'idef0_decomp' | 'dfd' | 'idef1x' | 'idef3'
+    this.width = 1200;
+    this.height = 820;
+
+    // Standard GOST R 50.1.028-2001 Appendix A Metadata
+    this.masterPage = DiagramModel.getDefaultMasterPage();
+    if (type === 'dfd') {
+      this.masterPage.frameStyle = 'dfd';
+    }
 
     // Diagram elements: blocks, processes, entities, stores
     this.elements = [];
@@ -130,7 +143,26 @@ class DiagramModel {
     this.type = data.type || 'idef0_context';
     this.width = data.width || 1200;
     this.height = data.height || 820;
-    this.masterPage = Object.assign(this.masterPage, data.masterPage || {});
+    
+    // Always start with clean default master page so previous diagram properties never leak
+    this.masterPage = Object.assign(DiagramModel.getDefaultMasterPage(), data.masterPage || {});
+
+    // Determine correct frameStyle
+    if (!this.masterPage.frameStyle) {
+      if (this.type === 'dfd') this.masterPage.frameStyle = 'dfd';
+      else if (this.type === 'idef1x') this.masterPage.frameStyle = 'idef1x';
+      else if (this.type === 'idef3') this.masterPage.frameStyle = 'idef3';
+      else this.masterPage.frameStyle = 'gost';
+    }
+
+    const isModern = ['dfd', 'idef1x', 'idef3'].includes(this.masterPage.frameStyle);
+    if (!isModern) {
+      delete this.masterPage.dfdSubtitle;
+      delete this.masterPage.dfdLegend;
+      delete this.masterPage.dfdNote;
+      delete this.masterPage.dfdFooterMeta;
+    }
+
     this.elements = data.elements || [];
     this.connections = data.connections || [];
     this.selectedIds = [];

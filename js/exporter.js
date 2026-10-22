@@ -38,6 +38,20 @@ class DiagramExporter {
         <marker id="arr_crowfoot" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
           <path d="M 0 0 L 10 5 L 0 10 M 0 5 L 10 5" fill="none" stroke="#000000" stroke-width="1.3"/>
         </marker>
+        <marker id="arr_idef1x_dot" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+          <circle cx="5" cy="5" r="3.5" fill="#000000"/>
+        </marker>
+        <marker id="arr_idef1x_diamond" markerWidth="14" markerHeight="10" refX="7" refY="5" orient="auto">
+          <polygon points="1 5, 7 1.5, 13 5, 7 8.5" fill="#ffffff" stroke="#000000" stroke-width="1.3"/>
+        </marker>
+        <marker id="arr_idef1x_z" markerWidth="14" markerHeight="14" refX="7" refY="7" orient="auto">
+          <rect x="0" y="0" width="14" height="14" fill="#ffffff" fill-opacity="0.9"/>
+          <text x="7" y="11" font-family="'Times New Roman', serif" font-size="12" font-weight="bold" fill="#000000" text-anchor="middle">Z</text>
+        </marker>
+        <marker id="arr_idef1x_p" markerWidth="14" markerHeight="14" refX="7" refY="7" orient="auto">
+          <rect x="0" y="0" width="14" height="14" fill="#ffffff" fill-opacity="0.9"/>
+          <text x="7" y="11" font-family="'Times New Roman', serif" font-size="12" font-weight="bold" fill="#000000" text-anchor="middle">P</text>
+        </marker>
       </defs>
     `;
 
