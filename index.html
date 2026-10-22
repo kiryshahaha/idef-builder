@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IDEF Builder — Редактор диаграмм по ГОСТ Р 50.1.028-2001</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50' y='68' font-size='50' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'>ID</text></svg>">
+</head>
+<body>
+
+  <!-- ═══ TOP NAVBAR ═══ -->
+  <header class="navbar">
+    <div class="nav-left">
+      <div class="logo-badge">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <line x1="3" y1="9" x2="21" y2="9"/>
+          <line x1="9" y1="21" x2="9" y2="9"/>
+        </svg>
+        <span>IDEF Builder</span>
+        <span class="tag">ГОСТ Р 50.1.028</span>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="nav-actions">
+        <button id="btn-templates" class="btn btn-primary" title="Выбрать готовый шаблон (ЛР3 Samarov Studio или чистый)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Шаблоны
+        </button>
+        <button id="btn-new" class="btn" title="Новый чистый бланк">Создать</button>
+        <button id="btn-open-json" class="btn" title="Открыть проект .json">Открыть</button>
+        <input type="file" id="input-file-json" accept=".json" style="display:none">
+        <button id="btn-save-json" class="btn" title="Сохранить проект в .json">Сохранить</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="nav-actions">
+        <button id="btn-undo" class="btn btn-icon" title="Отменить (Ctrl+Z)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/></svg>
+        </button>
+        <button id="btn-redo" class="btn btn-icon" title="Повторить (Ctrl+Y)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="nav-right" style="display: flex; align-items: center; gap: 8px;">
+      <button id="btn-check-gost" class="btn" title="Проверить диаграмму по правилам ГОСТа">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        ГОСТ-Контроль
+      </button>
+
+      <div class="divider"></div>
+
+      <button id="btn-export-svg" class="btn btn-success" title="Скачать векторный SVG">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        SVG (ГОСТ)
+      </button>
+      <button id="btn-export-png" class="btn" title="Экспорт в высокое разрешение PNG (300 DPI)">PNG</button>
+      <button id="btn-print" class="btn" title="Печать или экспорт в PDF через браузер">Печать</button>
+    </div>
+  </header>
+
+  <!-- ═══ MAIN WORKSPACE ═══ -->
+  <main class="workspace">
+
+    <!-- ── Left Sidebar (Palette) ── -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span>Библиотека фигур</span>
+      </div>
+      <div class="palette-scroll">
+
+        <!-- Group: IDEF0 -->
+        <div class="palette-group">
+          <div class="palette-group-title">
+            <span>IDEF0 (Функциональная)</span>
+          </div>
+          <div class="palette-items">
+            <div class="palette-item" data-type="idef0_block" title="Функциональный блок с кодом узла">
+              <svg viewBox="0 0 44 32">
+                <rect x="2" y="2" width="40" height="28" fill="#fff" stroke="#000" stroke-width="1.5"/>
+                <rect x="28" y="18" width="14" height="12" fill="#fff" stroke="#000" stroke-width="1"/>
+                <text x="35" y="27" font-size="7" font-weight="bold" text-anchor="middle">A1</text>
+              </svg>
+              <span>Функция</span>
+            </div>
+
+            <div class="palette-item" data-type="arrow_input" title="Входная стрелка ICOM (слева)">
+              <svg viewBox="0 0 44 32">
+                <line x1="4" y1="16" x2="40" y2="16" stroke="#1e40af" stroke-width="2" marker-end="url(#arr_input)"/>
+              </svg>
+              <span>Вход (Input)</span>
+            </div>
+
+            <div class="palette-item" data-type="arrow_control" title="Управляющая стрелка ICOM (сверху)">
+              <svg viewBox="0 0 44 32">
+                <line x1="22" y1="4" x2="22" y2="28" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr_control)"/>
+              </svg>
+              <span>Управление</span>
+            </div>
+
+            <div class="palette-item" data-type="arrow_output" title="Выходная стрелка ICOM (справа)">
+              <svg viewBox="0 0 44 32">
+                <line x1="4" y1="16" x2="40" y2="16" stroke="#1e293b" stroke-width="2" marker-end="url(#arr_output)"/>
+              </svg>
+              <span>Выход (Output)</span>
+            </div>
+
+            <div class="palette-item" data-type="arrow_mechanism" title="Стрелка механизма ICOM (снизу вверх)">
+              <svg viewBox="0 0 44 32">
+                <line x1="22" y1="28" x2="22" y2="4" stroke="#dc2626" stroke-width="2" marker-end="url(#arr_mechanism)"/>
+              </svg>
+              <span>Механизм</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Group: DFD -->
+        <div class="palette-group">
+          <div class="palette-group-title">
+            <span>DFD (Потоки данных)</span>
+          </div>
+          <div class="palette-items">
+            <div class="palette-item" data-type="dfd_entity" title="Внешняя сущность">
+              <svg viewBox="0 0 44 32">
+                <rect x="4" y="4" width="36" height="24" fill="#fff" stroke="#000" stroke-width="1.5"/>
+                <line x1="4" y1="9" x2="40" y2="9" stroke="#000" stroke-width="0.8"/>
+              </svg>
+              <span>Сущность</span>
+            </div>
+
+            <div class="palette-item" data-type="dfd_process" title="Процесс обработки данных">
+              <svg viewBox="0 0 44 32">
+                <ellipse cx="22" cy="16" rx="18" ry="12" fill="#fff" stroke="#000" stroke-width="1.5"/>
+                <ellipse cx="22" cy="16" rx="15" ry="9" fill="none" stroke="#000" stroke-width="0.7"/>
+              </svg>
+              <span>Процесс</span>
+            </div>
+
+            <div class="palette-item" data-type="dfd_store" title="Накопитель данных">
+              <svg viewBox="0 0 44 32">
+                <line x1="2" y1="10" x2="42" y2="10" stroke="#000" stroke-width="1.5"/>
+                <line x1="2" y1="22" x2="42" y2="22" stroke="#000" stroke-width="1.5"/>
+                <line x1="2" y1="10" x2="2" y2="22" stroke="#000" stroke-width="1.5"/>
+                <rect x="2" y="10" width="10" height="12" fill="#cbd5e1"/>
+              </svg>
+              <span>Накопитель</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Group: IDEF1X -->
+        <div class="palette-group">
+          <div class="palette-group-title">
+            <span>IDEF1X (Реляционная БД)</span>
+          </div>
+          <div class="palette-items">
+            <div class="palette-item" data-type="idef1x_entity_indep" title="Независимая таблица (острые углы)">
+              <svg viewBox="0 0 44 32">
+                <rect x="2" y="2" width="40" height="28" fill="#fff" stroke="#000" stroke-width="1.5"/>
+                <rect x="2" y="2" width="40" height="8" fill="#1e40af"/>
+              </svg>
+              <span>Независимая</span>
+            </div>
+
+            <div class="palette-item" data-type="idef1x_entity_dep" title="Зависимая таблица (скругленные углы)">
+              <svg viewBox="0 0 44 32">
+                <rect x="2" y="2" width="40" height="28" rx="4" ry="4" fill="#fff" stroke="#000" stroke-width="1.5"/>
+                <rect x="2" y="2" width="40" height="8" rx="4" ry="4" fill="#1e40af"/>
+              </svg>
+              <span>Зависимая</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Group: IDEF3 -->
+        <div class="palette-group">
+          <div class="palette-group-title">
+            <span>IDEF3 (Алгоритм процессов)</span>
+          </div>
+          <div class="palette-items">
+            <div class="palette-item" data-type="idef3_uob" title="Единица работы UOB">
+              <svg viewBox="0 0 44 32">
+                <rect x="2" y="2" width="40" height="28" fill="#fff" stroke="#000" stroke-width="1.5"/>
+                <line x1="2" y1="22" x2="42" y2="22" stroke="#000" stroke-width="1"/>
+              </svg>
+              <span>UOB Действие</span>
+            </div>
+
+            <div class="palette-item" data-type="idef3_junction" title="Логическое соединение (& / X / O)">
+              <svg viewBox="0 0 44 32">
+                <circle cx="22" cy="16" r="12" fill="#fff" stroke="#000" stroke-width="1.5"/>
+                <text x="22" y="20" font-size="11" font-weight="bold" text-anchor="middle">&amp;</text>
+              </svg>
+              <span>Перекресток</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- ── Center Canvas ── -->
+    <section class="canvas-wrapper" id="canvas-container">
+      <!-- Injected via CanvasController -->
+    </section>
+
+    <!-- Floating Canvas Controls -->
+    <div class="canvas-floating-toolbar">
+      <button id="btn-zoom-out" class="btn btn-sm btn-icon" title="Уменьшить масштаб">-</button>
+      <span id="zoom-level-text" class="zoom-indicator">85%</span>
+      <button id="btn-zoom-in" class="btn btn-sm btn-icon" title="Увеличить масштаб">+</button>
+      <button id="btn-zoom-reset" class="btn btn-sm" title="Сбросить масштаб и положение">100%</button>
+    </div>
+
+    <!-- ── Right Inspector Panel ── -->
+    <aside class="inspector">
+      <div class="inspector-tabs">
+        <div class="inspector-tab active" data-target="tab-props">Свойства</div>
+        <div class="inspector-tab" data-target="tab-master">Штамп ГОСТ</div>
+        <div class="inspector-tab" data-target="tab-validation">Контроль</div>
+      </div>
+
+      <!-- Tab 1: Element Properties -->
+      <div id="tab-props" class="inspector-content inspector-content-pane">
+        <div id="no-selection-notice" style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 20px;">
+          Выберите блок или стрелку на холсте для редактирования свойств
+        </div>
+
+        <div id="selected-props-box" style="display: none; flex-direction: column; gap: 14px;">
+          <div class="form-group">
+            <label>Наименование / Текст</label>
+            <textarea id="inp-el-name" class="form-control" placeholder="Наименование функции или потока..."></textarea>
+            <small style="color: var(--text-muted); font-size: 10px;">Для IDEF0: глагол в начальной форме (п. 6.1 ГОСТ)</small>
+          </div>
+
+          <div class="form-group">
+            <label>Код / Номер узла</label>
+            <input type="text" id="inp-el-code" class="form-control" placeholder="A1, D1, J1.1...">
+          </div>
+
+          <div class="form-group" id="conn-type-box" style="display: none;">
+            <label>Тип интерфейса (ICOM)</label>
+            <select id="sel-conn-type" class="form-control">
+              <option value="input">Вход (Input - Синий)</option>
+              <option value="control">Управление (Control - Фиолетовый)</option>
+              <option value="output">Выход (Output - Темно-синий)</option>
+              <option value="mechanism">Механизм (Mechanism - Красный)</option>
+              <option value="call">Вызов (Call - Красный вниз)</option>
+              <option value="dataflow">Поток данных (DFD)</option>
+              <option value="rel_ident">Идентифицирующая (IDEF1X)</option>
+              <option value="rel_non">Неидентифицирующая (IDEF1X)</option>
+              <option value="precedence">Предшествование (IDEF3)</option>
+            </select>
+          </div>
+
+          <button id="btn-del-selected" class="btn btn-danger" style="margin-top: 10px;">
+            Удалить элемент (Del)
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab 2: GOST Master Page Form -->
+      <div id="tab-master" class="inspector-content inspector-content-pane" style="display: none;">
+        <div class="form-group">
+          <label>Автор (п. 11.2)</label>
+          <input type="text" id="inp-mp-author" class="form-control" value="Энгельгардт К. А.">
+        </div>
+
+        <div class="form-group">
+          <label>Проект</label>
+          <input type="text" id="inp-mp-project" class="form-control" value="Samarov Studio IS">
+        </div>
+
+        <div class="form-group">
+          <label>Читатель / Рецензент</label>
+          <input type="text" id="inp-mp-reader" class="form-control" value="Белая Т. И.">
+        </div>
+
+        <div class="form-group">
+          <label>Шифр узла (Вершина)</label>
+          <input type="text" id="inp-mp-node" class="form-control" value="A-0">
+        </div>
+
+        <div class="form-group">
+          <label>Заголовок диаграммы</label>
+          <input type="text" id="inp-mp-title" class="form-control" value="Управлять жизненным циклом дизайн-проектов">
+        </div>
+
+        <div class="form-group">
+          <label>C-Номер (Номер страницы)</label>
+          <input type="text" id="inp-mp-cnumber" class="form-control" value="1">
+        </div>
+
+        <div class="form-group">
+          <label>Контекст родителя</label>
+          <input type="text" id="inp-mp-context" class="form-control" value="ТОЛЬКО ДЛЯ РАЗРАБОТКИ">
+        </div>
+
+        <div class="form-group">
+          <label>Статус листа</label>
+          <select id="sel-mp-status" class="form-control">
+            <option value="work">Рабочая версия</option>
+            <option value="draft">Проект</option>
+            <option value="recommended">Рекомендовано</option>
+            <option value="publication">Публикация</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tab 3: GOST Compliance Validator -->
+      <div id="tab-validation" class="inspector-content inspector-content-pane" style="display: none;">
+        <div class="validation-card">
+          <div class="validation-header">
+            <span style="font-size: 12px; font-weight: 700;">Статус проверки:</span>
+            <span id="gost-compliance-badge" class="badge badge-success">Проверка...</span>
+          </div>
+          <div id="validation-items-list" class="validation-list" style="margin-top: 10px;">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+        <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4; margin-top: 10px;">
+          Автоматическая проверка выполнена по требованиям:
+          <ul style="margin-left: 16px; margin-top: 4px;">
+            <li>Р 50.1.028-2001 (Синтаксис и семантика IDEF0)</li>
+            <li>Правило 3–6 блоков (п. 8.1)</li>
+            <li>Глагольные имена функций (п. 6.1)</li>
+            <li>Запрет ICOM-терминов в стрелках (п. 6.3.д)</li>
+          </ul>
+        </div>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- ═══ MODAL: TEMPLATES GALLERY ═══ -->
+  <div id="modal-templates" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Выберите шаблон диаграммы по ГОСТу</div>
+        <button class="btn btn-sm btn-icon" onclick="document.getElementById('modal-templates').classList.remove('active')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="templates-grid" id="templates-grid">
+          <!-- Injected dynamically from js/templates.js -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="document.getElementById('modal-templates').classList.remove('active')">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/model.js"></script>
+  <script src="js/gost_frame.js"></script>
+  <script src="js/connector.js"></script>
+  <script src="js/templates.js"></script>
+  <script src="js/validator.js"></script>
+  <script src="js/exporter.js"></script>
+  <script src="js/canvas.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
