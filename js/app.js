@@ -728,8 +728,8 @@ class IdefApp {
 
     this.currentDiagramId = diagramId;
     localStorage.setItem('idef_active_diagram_id', diagramId);
-    // If IDEF0 diagram was corrupted with DFD, restore clean template
-    if (diagramId.startsWith('fig1') || diagramId.startsWith('fig2') || diagramId.includes('idef0')) {
+    // If IDEF0 built-in template was corrupted with DFD, restore clean template
+    if (diagramId === 'fig1_idef0_context' || diagramId === 'fig2_idef0_decomp') {
       if (data && (data.type === 'dfd' || (data.masterPage && data.masterPage.dfdSubtitle))) {
         const tmpl = DIAGRAM_TEMPLATES[diagramId];
         if (tmpl) data = JSON.parse(JSON.stringify(tmpl));
@@ -737,13 +737,13 @@ class IdefApp {
       }
     }
 
-    // If DFD diagram has old Samarov content, upgrade to new Beeline Business DFD
-    if (diagramId.includes('dfd') || (data && data.type === 'dfd')) {
+    // If DFD built-in template has old Samarov content, upgrade to new Beeline Business DFD
+    if (diagramId === 'fig3_dfd_level1' || diagramId === 'fig4_dfd_pin_pep') {
       if (data) {
         data.type = 'dfd';
         const raw = JSON.stringify(data);
         if (raw.includes('Samarov') || raw.includes('смарт-бриф') || !data.masterPage || !data.masterPage.dfdSubtitle) {
-          const tmpl = DIAGRAM_TEMPLATES[diagramId] || DIAGRAM_TEMPLATES.fig3_dfd_level1;
+          const tmpl = DIAGRAM_TEMPLATES[diagramId];
           if (tmpl) {
             data = JSON.parse(JSON.stringify(tmpl));
             localStorage.setItem(this.getStorageKey(diagramId), JSON.stringify(data));
@@ -771,32 +771,39 @@ class IdefApp {
           throw new Error('Файл не содержит корректные данные схемы');
         }
 
-        // 1. Save currently open diagram before switching
-        if (this.currentDiagramId) {
-          this.saveCurrentDiagramToStorage();
-        }
+        // Keep the user in their CURRENT active workspace (never navigate back to old diagramId)
+        const targetId = this.currentDiagramId || ('page_' + Date.now() + '_' + (data.type || 'custom'));
+        this.currentDiagramId = targetId;
+        data.id = targetId;
 
-        // 2. Identify diagram ID and store in localStorage
-        const diagId = data.id || ('imported_' + Date.now());
-        data.id = diagId;
-        this.currentDiagramId = diagId;
-        localStorage.setItem('idef_active_diagram_id', diagId);
-        localStorage.setItem(this.getStorageKey(diagId), JSON.stringify(data));
-
-        // 3. Register in custom pages list if not a standard template
-        const isBuiltin = (typeof DIAGRAM_TEMPLATES !== 'undefined') && Boolean(DIAGRAM_TEMPLATES[diagId]);
-        if (!isBuiltin) {
-          const title = (data.masterPage && data.masterPage.title) || file.name.replace(/\.json$/i, '') || 'Импортированная схема';
-          const type = data.type || 'idef0';
-          this.saveCustomPageMeta(diagId, title, type);
-        }
-
-        // 4. Load into active diagram model
+        // Load into active diagram model
         this.model.fromJSON(data);
+        this.model.id = targetId;
+
+        // If currently in a custom page, keep page metadata updated with new diagram title and type
+        const customPages = this.getCustomPagesList();
+        const existingPage = customPages.find(p => p.id === targetId);
+        const title = (data.masterPage && data.masterPage.title) || file.name.replace(/\.json$/i, '') || 'Диаграмма';
+        const type = data.type || this.model.type || 'idef0';
+
+        if (existingPage) {
+          existingPage.name = title;
+          existingPage.type = type;
+          existingPage.updatedAt = Date.now();
+          this.saveCustomPagesList(customPages);
+        } else if (!DIAGRAM_TEMPLATES[targetId]) {
+          // If it's an unregistered custom workspace, register it
+          this.saveCustomPageMeta(targetId, title, type);
+        }
+
+        // Save immediately to localStorage for current workspace ID
+        this.saveCurrentDiagramToStorage();
+
+        // Reset history
         this.history = [];
         this.historyIndex = -1;
 
-        // 5. Update canvas and inspector
+        // Update canvas and inspector
         this.canvas.render();
         this.updateInspector();
         this.updateCanvasSizeInputs();
@@ -806,11 +813,11 @@ class IdefApp {
           this.initTemplatesModal();
         }
 
-        // 6. Visual confirmation in status badge
+        // Visual confirmation in status badge
         const autoBadge = document.getElementById('autosave-status');
         if (autoBadge) {
           const origHTML = autoBadge.innerHTML;
-          autoBadge.innerHTML = '<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#3b82f6;"></span> Загружено';
+          autoBadge.innerHTML = '<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#3b82f6;"></span> Загружено в текущую страницу';
           setTimeout(() => { autoBadge.innerHTML = origHTML; }, 3000);
         }
       } catch (err) {
