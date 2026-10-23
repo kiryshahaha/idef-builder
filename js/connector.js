@@ -196,7 +196,7 @@ class ConnectorEngine {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'svg-connection');
     g.setAttribute('data-id', conn.id);
-    g.setAttribute('style', 'cursor: pointer;');
+    g.setAttribute('style', 'cursor: move;');
 
     // Tunnel brackets ( ) if specified per ГОСТ
     let tunnelSvg = '';

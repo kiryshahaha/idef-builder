@@ -28,6 +28,7 @@ class CanvasController {
     this.dragLabelStartPt = { x: 0, y: 0 };
     this.dragLabelInitOffset = { x: 0, y: 0 };
     this.dragHandleTarget = null;
+    this.dragConnTarget = null;
     this.resizeTarget = null;
     this.activePort = null;
     this.tempConnection = null;
@@ -903,11 +904,30 @@ class CanvasController {
         return;
       }
 
-      // Connection Selection
+      // Connection Selection & Drag
       const connNode = e.target.closest('.svg-connection');
       if (connNode) {
         const id = connNode.getAttribute('data-id');
         this.selectConnection(id);
+        const conn = this.model.getConnectionById(id);
+        if (conn) {
+          const { p1, p2 } = ConnectorEngine.getConnectionEndpoints(conn, this.model);
+          if (!conn.points || conn.points.length < 2) {
+            conn.points = ConnectorEngine.routeOrthogonal(p1, p2);
+          }
+          const pt = this.screenToCanvasPoint(e.clientX, e.clientY);
+          this.dragConnTarget = {
+            conn: conn,
+            startPt: pt,
+            origPoints: conn.points.map(p => ({ x: p.x, y: p.y })),
+            isFullyAnchored: Boolean(conn.sourceId && conn.targetId),
+            hasSource: Boolean(conn.sourceId),
+            hasTarget: Boolean(conn.targetId)
+          };
+          connNode.style.cursor = 'grabbing';
+          e.stopPropagation();
+          e.preventDefault();
+        }
         return;
       }
 
@@ -1050,15 +1070,47 @@ class CanvasController {
 
         if (type === 'segment') {
           if (pts.length === 2) {
-            // Straight line: drag segment perpendicular to slide it
-            if (orient === 'h') {
-              const newY = Math.round(pt.y / snap) * snap;
-              pts[0].y = newY;
-              pts[1].y = newY;
+            // Straight line
+            if (conn.sourceId || conn.targetId) {
+              // Attached to a block: expand into 4-point detour on perpendicular drag
+              const pA = pts[0];
+              const pB = pts[1];
+              const mx = Math.round((pA.x + pB.x) / 2);
+              const my = Math.round((pA.y + pB.y) / 2);
+              if (orient === 'h') {
+                const newY = Math.round(pt.y / snap) * snap;
+                conn.points = [
+                  { x: pA.x, y: conn.sourceId ? pA.y : newY },
+                  { x: mx, y: conn.sourceId ? pA.y : newY },
+                  { x: mx, y: conn.targetId ? pB.y : newY },
+                  { x: pB.x, y: conn.targetId ? pB.y : newY }
+                ];
+              } else {
+                const newX = Math.round(pt.x / snap) * snap;
+                conn.points = [
+                  { x: conn.sourceId ? pA.x : newX, y: pA.y },
+                  { x: conn.sourceId ? pA.x : newX, y: my },
+                  { x: conn.targetId ? pB.x : newX, y: my },
+                  { x: conn.targetId ? pB.x : newX, y: pB.y }
+                ];
+              }
+              this.dragHandleTarget.segIdx = 1;
+              this.dragHandleTarget.orient = (orient === 'h') ? 'v' : 'h';
             } else {
-              const newX = Math.round(pt.x / snap) * snap;
-              pts[0].x = newX;
-              pts[1].x = newX;
+              // Free straight line: slide both ends parallel
+              if (orient === 'h') {
+                const newY = Math.round(pt.y / snap) * snap;
+                pts[0].y = newY;
+                pts[1].y = newY;
+                if (conn.p1) conn.p1.y = newY;
+                if (conn.p2) conn.p2.y = newY;
+              } else {
+                const newX = Math.round(pt.x / snap) * snap;
+                pts[0].x = newX;
+                pts[1].x = newX;
+                if (conn.p1) conn.p1.x = newX;
+                if (conn.p2) conn.p2.x = newX;
+              }
             }
           } else {
             // Multi-segment line: slide segment strictly in its 1D axis
@@ -1072,9 +1124,87 @@ class CanvasController {
               pts[segIdx + 1].y = newY;
             }
           }
+
+          if (!conn.sourceId && pts.length > 0) {
+            conn.p1 = { x: pts[0].x, y: pts[0].y };
+          }
+          if (!conn.targetId && pts.length > 0) {
+            conn.p2 = { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y };
+          }
+
           this.updateConnectionPathInDom(conn);
           return;
         }
+      }
+
+      // Drag connection directly by clicking and dragging on its line
+      if (this.dragConnTarget) {
+        const pt = this.screenToCanvasPoint(e.clientX, e.clientY);
+        const snap = 5;
+        const dx = Math.round((pt.x - this.dragConnTarget.startPt.x) / snap) * snap;
+        const dy = Math.round((pt.y - this.dragConnTarget.startPt.y) / snap) * snap;
+        const { conn, origPoints, isFullyAnchored, hasSource, hasTarget } = this.dragConnTarget;
+
+        if (!isFullyAnchored) {
+          if (!hasSource && !hasTarget) {
+            // Completely free arrow: move entire arrow
+            conn.points = origPoints.map(p => ({
+              x: Math.max(5, p.x + dx),
+              y: Math.max(85, p.y + dy)
+            }));
+          } else if (hasSource && !hasTarget) {
+            // Source fixed, target free: move remaining points
+            conn.points = origPoints.map((p, i) => {
+              if (i === 0) return { x: p.x, y: p.y };
+              return { x: Math.max(5, p.x + dx), y: Math.max(85, p.y + dy) };
+            });
+            if (conn.points.length >= 2) {
+              if (Math.abs(origPoints[0].y - origPoints[1].y) <= Math.abs(origPoints[0].x - origPoints[1].x)) {
+                conn.points[1].y = conn.points[0].y;
+              } else {
+                conn.points[1].x = conn.points[0].x;
+              }
+            }
+          } else if (!hasSource && hasTarget) {
+            // Target fixed, source free: move remaining points
+            const last = origPoints.length - 1;
+            conn.points = origPoints.map((p, i) => {
+              if (i === last) return { x: p.x, y: p.y };
+              return { x: Math.max(5, p.x + dx), y: Math.max(85, p.y + dy) };
+            });
+            if (conn.points.length >= 2) {
+              if (Math.abs(origPoints[last].y - origPoints[last - 1].y) <= Math.abs(origPoints[last].x - origPoints[last - 1].x)) {
+                conn.points[last - 1].y = conn.points[last].y;
+              } else {
+                conn.points[last - 1].x = conn.points[last].x;
+              }
+            }
+          }
+        } else {
+          // Fully anchored: shift middle bend segment
+          if (conn.points.length === 4) {
+            const isVert = Math.abs(origPoints[1].x - origPoints[2].x) < 2;
+            if (isVert) {
+              const newX = Math.round((origPoints[1].x + dx) / snap) * snap;
+              conn.points[1].x = newX;
+              conn.points[2].x = newX;
+            } else {
+              const newY = Math.round((origPoints[1].y + dy) / snap) * snap;
+              conn.points[1].y = newY;
+              conn.points[2].y = newY;
+            }
+          }
+        }
+
+        if (!conn.sourceId && conn.points.length > 0) {
+          conn.p1 = { x: conn.points[0].x, y: conn.points[0].y };
+        }
+        if (!conn.targetId && conn.points.length > 0) {
+          conn.p2 = { x: conn.points[conn.points.length - 1].x, y: conn.points[conn.points.length - 1].y };
+        }
+
+        this.updateConnectionPathInDom(conn);
+        return;
       }
 
       if (this.dragLabelTarget) {
@@ -1226,6 +1356,47 @@ class CanvasController {
         }
 
         this.dragHandleTarget = null;
+        this.render();
+        if (this.app) this.app.recordHistory();
+      }
+
+      if (this.dragConnTarget) {
+        const { conn, isFullyAnchored } = this.dragConnTarget;
+
+        if (!isFullyAnchored && conn.points && conn.points.length >= 2) {
+          // Check if start or end can snap to a block port
+          if (!conn.sourceId) {
+            const pStart = conn.points[0];
+            const nearStart = this.getNearestPort(pStart.x, pStart.y, 25);
+            if (nearStart) {
+              conn.sourceId = nearStart.blockId;
+              conn.sourcePort = nearStart.side;
+              conn.points[0] = { x: nearStart.x, y: nearStart.y };
+            } else {
+              conn.p1 = { x: pStart.x, y: pStart.y };
+            }
+          }
+          if (!conn.targetId) {
+            const pEnd = conn.points[conn.points.length - 1];
+            const nearEnd = this.getNearestPort(pEnd.x, pEnd.y, 25);
+            if (nearEnd) {
+              conn.targetId = nearEnd.blockId;
+              conn.targetPort = nearEnd.side;
+              conn.points[conn.points.length - 1] = { x: nearEnd.x, y: nearEnd.y };
+            } else {
+              conn.p2 = { x: pEnd.x, y: pEnd.y };
+            }
+          }
+        }
+
+        if (!conn.sourceId && conn.points && conn.points.length > 0) {
+          conn.p1 = { x: conn.points[0].x, y: conn.points[0].y };
+        }
+        if (!conn.targetId && conn.points && conn.points.length > 0) {
+          conn.p2 = { x: conn.points[conn.points.length - 1].x, y: conn.points[conn.points.length - 1].y };
+        }
+
+        this.dragConnTarget = null;
         this.render();
         if (this.app) this.app.recordHistory();
       }
