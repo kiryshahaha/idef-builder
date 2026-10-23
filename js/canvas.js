@@ -130,6 +130,8 @@ class CanvasController {
     if (this.svgEl) {
       this.svgEl.setAttribute('width', this.model.width);
       this.svgEl.setAttribute('height', this.model.height);
+      this.svgEl.style.width = this.model.width + 'px';
+      this.svgEl.style.height = this.model.height + 'px';
       this.svgEl.setAttribute('viewBox', `0 0 ${this.model.width} ${this.model.height}`);
     }
 
@@ -999,6 +1001,7 @@ class CanvasController {
             }
           }
           this.updateConnectionPathInDom(conn);
+          this.updateHandleElPos(this.dragHandleTarget.handleEl, targetPt.x, targetPt.y);
           return;
         }
 
@@ -1023,6 +1026,7 @@ class CanvasController {
             }
           }
           this.updateConnectionPathInDom(conn);
+          this.updateHandleElPos(this.dragHandleTarget.handleEl, targetPt.x, targetPt.y);
           return;
         }
 
@@ -1065,6 +1069,7 @@ class CanvasController {
           }
 
           this.updateConnectionPathInDom(conn);
+          this.updateHandleElPos(this.dragHandleTarget.handleEl, newX, newY);
           return;
         }
 
@@ -1577,11 +1582,34 @@ class CanvasController {
   }
 
   screenToCanvasPoint(clientX, clientY) {
+    if (this.svgEl && this.svgEl.getScreenCTM) {
+      const ctm = this.svgEl.getScreenCTM();
+      if (ctm) {
+        const pt = this.svgEl.createSVGPoint();
+        pt.x = clientX;
+        pt.y = clientY;
+        const canvasPt = pt.matrixTransform(ctm.inverse());
+        return {
+          x: canvasPt.x,
+          y: canvasPt.y
+        };
+      }
+    }
     const rect = this.svgEl.getBoundingClientRect();
+    const scaleX = rect.width / (this.model.width || 1200);
+    const scaleY = rect.height / (this.model.height || 820);
     return {
-      x: (clientX - rect.left) / this.scale,
-      y: (clientY - rect.top) / this.scale
+      x: (clientX - rect.left) / (scaleX || this.scale || 1),
+      y: (clientY - rect.top) / (scaleY || this.scale || 1)
     };
+  }
+
+  updateHandleElPos(handleEl, x, y) {
+    if (!handleEl) return;
+    const hit = handleEl.querySelector('.handle-hitarea');
+    const vis = handleEl.querySelector('.handle-visible');
+    if (hit) { hit.setAttribute('cx', x); hit.setAttribute('cy', y); }
+    if (vis) { vis.setAttribute('cx', x); vis.setAttribute('cy', y); }
   }
 
   zoom(factor, cx, cy) {

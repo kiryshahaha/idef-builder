@@ -320,14 +320,11 @@ body {
   transform-origin: 0 0;
 }
 
-/* Master Page Form (Sheet) */
+/* Master Page Form (Sheet) - width and height are driven dynamically by the diagram model */
 .gost-sheet {
   position: absolute;
   background: #ffffff;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-  /* Default A4 Landscape 1200 x 820 px */
-  width: 1200px;
-  height: 820px;
   top: 40px;
   left: 60px;
 }

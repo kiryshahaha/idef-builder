@@ -756,6 +756,7 @@ class IdefApp {
     this.history = [];
     this.historyIndex = -1;
     this.canvas.render();
+    this.canvas.fitToScreen();
     this.updateInspector();
     this.recordHistory();
     this.updateDiagramHeaderBadge();
@@ -805,6 +806,7 @@ class IdefApp {
 
         // Update canvas and inspector
         this.canvas.render();
+        this.canvas.fitToScreen();
         this.updateInspector();
         this.updateCanvasSizeInputs();
         this.recordHistory();
