@@ -36,7 +36,7 @@ class GostFrame {
 
   isModernFrame() {
     const ft = this.getFrameType();
-    return ft === 'dfd' || ft === 'idef1x' || ft === 'idef3';
+    return ft === 'dfd' || ft === 'idef1x' || ft === 'idef3' || ft === 'academic';
   }
 
   render(svg) {
@@ -53,6 +53,9 @@ class GostFrame {
     if (frameType === 'idef3') {
       return this.renderIdef3Frame();
     }
+    if (frameType === 'academic') {
+      return this.renderAcademicFrame();
+    }
     return this.renderGostFrame();
   }
 
@@ -62,6 +65,75 @@ class GostFrame {
     let g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'blank-master-frame');
     g.innerHTML = `<rect x="2" y="2" width="${W - 4}" height="${H - 4}" fill="none" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="6,4"/>`;
+    return g;
+  }
+
+  renderAcademicFrame() {
+    const W = this.model.width || 1300;
+    const H = this.model.height || 680;
+    const mp = this.model.masterPage || {};
+
+    const title = mp.title || 'IDEF0: Декомпозиция деятельности актора';
+    const subtitle = mp.dfdSubtitle || 'Функциональная декомпозиция на узлы А1–А4 в целевой модели процессов студии';
+    const node = mp.node || 'A0';
+    const leftFooter = mp.dfdLegend || 'ГУАП | Кафедра № 43 | Дисциплина: Проектирование программных систем | Преподаватель: доц. Белая Т. И.';
+    const rightFooter = mp.dfdFooterMeta || 'Студент: Энгельгардт К. А., гр. 4434 | ИС «Samarov Studio»';
+    const caption = mp.caption || '';
+
+    let g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'gost-master-frame academic-master-frame');
+    g.setAttribute('style', 'user-select: none; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;');
+
+    let captionSvg = '';
+    if (caption) {
+      captionSvg = `
+        <g class="editable-meta" data-field="caption" style="cursor: default;">
+          <rect x="${W / 2 - 400}" y="${H - 18}" width="800" height="20" fill="transparent" class="cell-hitarea" style="pointer-events: none;"/>
+          <text x="${W / 2}" y="${H - 6}" font-size="10.5" font-weight="bold" fill="#000000" text-anchor="middle">${caption}</text>
+        </g>
+      `;
+    }
+
+    g.innerHTML = `
+      <!-- Outer Border -->
+      <rect x="2" y="2" width="${W - 4}" height="${H - 4}" fill="none" stroke="#000000" stroke-width="1.2"/>
+
+      <!-- ═══ HEADER ═══ -->
+      <!-- Node Badge in top left -->
+      <g class="editable-meta" data-field="node" style="cursor: default;">
+        <rect x="15" y="8" width="90" height="24" fill="transparent" class="cell-hitarea" style="pointer-events: none;"/>
+        <text x="20" y="25" font-size="12" font-weight="bold" fill="#000000">NODE: ${node}</text>
+      </g>
+
+      <!-- Title & Subtitle centered -->
+      <g class="editable-meta" data-field="title" style="cursor: default;">
+        <rect x="${W / 2 - 400}" y="8" width="800" height="24" fill="transparent" class="cell-hitarea" style="pointer-events: none;"/>
+        <text x="${W / 2}" y="25" font-size="13.5" font-weight="bold" fill="#000000" text-anchor="middle">${title}</text>
+      </g>
+
+      <g class="editable-meta" data-field="dfdSubtitle" style="cursor: default;">
+        <rect x="${W / 2 - 450}" y="32" width="900" height="18" fill="transparent" class="cell-hitarea" style="pointer-events: none;"/>
+        <text x="${W / 2}" y="44" font-size="9.5" fill="#374151" text-anchor="middle">${subtitle}</text>
+      </g>
+
+      <!-- ═══ FOOTER ═══ -->
+      <line x1="2" y1="${H - 40}" x2="${W - 2}" y2="${H - 40}" stroke="#000000" stroke-width="0.8"/>
+
+      <!-- Left footer meta -->
+      <g class="editable-meta" data-field="dfdLegend" style="cursor: default;">
+        <rect x="15" y="${H - 34}" width="600" height="22" fill="transparent" class="cell-hitarea" style="pointer-events: none;"/>
+        <text x="20" y="${H - 18}" font-size="8.5" fill="#111827">${leftFooter}</text>
+      </g>
+
+      <!-- Right footer meta -->
+      <g class="editable-meta" data-field="dfdFooterMeta" style="cursor: default;">
+        <rect x="${W - 550}" y="${H - 34}" width="535" height="22" fill="transparent" class="cell-hitarea" style="pointer-events: none;"/>
+        <text x="${W - 20}" y="${H - 18}" font-size="8.5" fill="#111827" text-anchor="end">${rightFooter}</text>
+      </g>
+
+      ${captionSvg}
+    `;
+
     return g;
   }
 

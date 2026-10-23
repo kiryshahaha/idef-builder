@@ -155,7 +155,7 @@ class DiagramModel {
       else this.masterPage.frameStyle = 'gost';
     }
 
-    const isModern = ['dfd', 'idef1x', 'idef3'].includes(this.masterPage.frameStyle);
+    const isModern = ['dfd', 'idef1x', 'idef3', 'academic'].includes(this.masterPage.frameStyle);
     if (!isModern) {
       delete this.masterPage.dfdSubtitle;
       delete this.masterPage.dfdLegend;
