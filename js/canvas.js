@@ -254,7 +254,7 @@ class CanvasController {
     this.overlayLayer.appendChild(g);
   }
 
-  getNearestPort(canvasX, canvasY, maxDist = 25) {
+  getNearestPort(canvasX, canvasY, maxDist = 8) {
     let nearest = null;
     let minDist = maxDist;
 
@@ -980,7 +980,7 @@ class CanvasController {
         const pts = conn.points;
 
         if (type === 'endpoint_start') {
-          const nearest = this.getNearestPort(pt.x, pt.y, 25);
+          const nearest = this.getNearestPort(pt.x, pt.y, 8);
           const targetPt = nearest ? { x: nearest.x, y: nearest.y } : {
             x: Math.round(pt.x / snap) * snap,
             y: Math.round(pt.y / snap) * snap
@@ -1003,7 +1003,7 @@ class CanvasController {
         }
 
         if (type === 'endpoint_end') {
-          const nearest = this.getNearestPort(pt.x, pt.y, 25);
+          const nearest = this.getNearestPort(pt.x, pt.y, 8);
           const targetPt = nearest ? { x: nearest.x, y: nearest.y } : {
             x: Math.round(pt.x / snap) * snap,
             y: Math.round(pt.y / snap) * snap
@@ -1319,7 +1319,7 @@ class CanvasController {
         // If endpoint was dragged, check port reconnection
         if (type === 'endpoint_start') {
           const pt = conn.points[0];
-          const nearest = this.getNearestPort(pt.x, pt.y, 25);
+          const nearest = this.getNearestPort(pt.x, pt.y, 8);
           if (nearest) {
             conn.sourceId = nearest.blockId;
             conn.sourcePort = nearest.side;
@@ -1331,7 +1331,7 @@ class CanvasController {
           }
         } else if (type === 'endpoint_end') {
           const pt = conn.points[conn.points.length - 1];
-          const nearest = this.getNearestPort(pt.x, pt.y, 25);
+          const nearest = this.getNearestPort(pt.x, pt.y, 8);
           if (nearest) {
             conn.targetId = nearest.blockId;
             conn.targetPort = nearest.side;
@@ -1367,7 +1367,7 @@ class CanvasController {
           // Check if start or end can snap to a block port
           if (!conn.sourceId) {
             const pStart = conn.points[0];
-            const nearStart = this.getNearestPort(pStart.x, pStart.y, 25);
+            const nearStart = this.getNearestPort(pStart.x, pStart.y, 8);
             if (nearStart) {
               conn.sourceId = nearStart.blockId;
               conn.sourcePort = nearStart.side;
@@ -1378,7 +1378,7 @@ class CanvasController {
           }
           if (!conn.targetId) {
             const pEnd = conn.points[conn.points.length - 1];
-            const nearEnd = this.getNearestPort(pEnd.x, pEnd.y, 25);
+            const nearEnd = this.getNearestPort(pEnd.x, pEnd.y, 8);
             if (nearEnd) {
               conn.targetId = nearEnd.blockId;
               conn.targetPort = nearEnd.side;
