@@ -79,33 +79,33 @@ class IdefApp {
 
     // File Open
     const fileInput = document.getElementById('input-file-json');
-    document.getElementById('btn-open-json').addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const data = JSON.parse(event.target.result);
-          if (data) {
-      const rawStr = JSON.stringify(data);
-      if (rawStr.includes('Samarov') || rawStr.includes('смарт-бриф') || rawStr.includes('Beeline') || rawStr.includes('Geopify')) {
-        const tmpl = DIAGRAM_TEMPLATES[diagramId];
-        if (tmpl) {
-          data = JSON.parse(JSON.stringify(tmpl));
-          localStorage.setItem(this.getStorageKey(diagramId), JSON.stringify(data));
+    if (fileInput) {
+      document.getElementById('btn-open-json')?.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (file) {
+          this.openJsonFile(file);
+        }
+        fileInput.value = '';
+      });
+    }
+
+    // Window Drag & Drop .json project files
+    window.addEventListener('dragover', (e) => {
+      if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    });
+
+    window.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        if (file.name.toLowerCase().endsWith('.json') || file.type === 'application/json') {
+          e.preventDefault();
+          this.openJsonFile(file);
         }
       }
-    }
-    this.model.fromJSON(data);
-          this.canvas.render();
-          this.updateInspector();
-          this.recordHistory();
-        } catch (err) {
-          alert('Ошибка чтения файла проекта: ' + err.message);
-        }
-      };
-      reader.readAsText(file);
     });
 
     // Undo / Redo
@@ -759,6 +759,69 @@ class IdefApp {
     this.updateInspector();
     this.recordHistory();
     this.updateDiagramHeaderBadge();
+  }
+
+  openJsonFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        if (!data || typeof data !== 'object') {
+          throw new Error('Файл не содержит корректные данные схемы');
+        }
+
+        // 1. Save currently open diagram before switching
+        if (this.currentDiagramId) {
+          this.saveCurrentDiagramToStorage();
+        }
+
+        // 2. Identify diagram ID and store in localStorage
+        const diagId = data.id || ('imported_' + Date.now());
+        data.id = diagId;
+        this.currentDiagramId = diagId;
+        localStorage.setItem('idef_active_diagram_id', diagId);
+        localStorage.setItem(this.getStorageKey(diagId), JSON.stringify(data));
+
+        // 3. Register in custom pages list if not a standard template
+        const isBuiltin = (typeof DIAGRAM_TEMPLATES !== 'undefined') && Boolean(DIAGRAM_TEMPLATES[diagId]);
+        if (!isBuiltin) {
+          const title = (data.masterPage && data.masterPage.title) || file.name.replace(/\.json$/i, '') || 'Импортированная схема';
+          const type = data.type || 'idef0';
+          this.saveCustomPageMeta(diagId, title, type);
+        }
+
+        // 4. Load into active diagram model
+        this.model.fromJSON(data);
+        this.history = [];
+        this.historyIndex = -1;
+
+        // 5. Update canvas and inspector
+        this.canvas.render();
+        this.updateInspector();
+        this.updateCanvasSizeInputs();
+        this.recordHistory();
+        this.updateDiagramHeaderBadge();
+        if (typeof this.initTemplatesModal === 'function') {
+          this.initTemplatesModal();
+        }
+
+        // 6. Visual confirmation in status badge
+        const autoBadge = document.getElementById('autosave-status');
+        if (autoBadge) {
+          const origHTML = autoBadge.innerHTML;
+          autoBadge.innerHTML = '<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#3b82f6;"></span> Загружено';
+          setTimeout(() => { autoBadge.innerHTML = origHTML; }, 3000);
+        }
+      } catch (err) {
+        console.error('Ошибка импорта JSON:', err);
+        alert('Ошибка чтения файла проекта: ' + err.message);
+      }
+    };
+    reader.onerror = () => {
+      alert('Ошибка при чтении файла');
+    };
+    reader.readAsText(file);
   }
 
   loadTemplate(templateKey) {

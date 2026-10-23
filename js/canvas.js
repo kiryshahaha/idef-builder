@@ -1434,6 +1434,16 @@ class CanvasController {
 
     this.container.addEventListener('drop', (e) => {
       e.preventDefault();
+
+      // Support dropping JSON diagram files directly onto canvas
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        if (file.name.toLowerCase().endsWith('.json') || file.type === 'application/json') {
+          this.app.openJsonFile(file);
+          return;
+        }
+      }
+
       const type = e.dataTransfer.getData('text/plain');
       if (!type) return;
 
